@@ -1,0 +1,8 @@
+{
+  "+33214739222": {
+    "id": "garage_test",
+    "name": "Garage Test",
+    "to_email": "louis.becker.2001@gmail.com",
+    "from_email": "louis.becker@student-cs.fr"
+  }
+}
