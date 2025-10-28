@@ -7,6 +7,9 @@ import fs from "fs";
 import dotenv from "dotenv";
 import { extractInfoFr, extractNameFr, detectPriority, escapeHtml, normalizePhone } from "./utils/extractors.js";
 
+// 🧩 Import des fonctions de la BDD locale SQLite
+import { saveCall, saveMessage, getAllCalls } from "./db.js";
+
 dotenv.config();
 
 const app = express();
@@ -39,28 +42,60 @@ app.post("/email-voicemail", async (req, res) => {
 
   console.log("📩 Corps Twilio reçu et décodé :", payload);
 
-  const { RecordingSid, From, To } = payload;
+  const { RecordingSid, From, To, CallSid, CallStatus, CallDuration } = payload;
 
-  if (!RecordingSid || !To) {
+  if (!To) {
     console.warn("⚠️ Requête incomplète :", payload);
     return res.status(400).json({ error: "Requête invalide" });
   }
 
-    // ✅ Nettoyer et normaliser le numéro Twilio
-    let cleanTo = (To || "").trim().replace(/\s+/g, ""); // supprime espaces, tab, etc.
-    if (!cleanTo.startsWith("+")) {
-        cleanTo = "+" + cleanTo;
-    }
+  // ✅ Nettoyer et normaliser le numéro Twilio
+  let cleanTo = (To || "").trim().replace(/\s+/g, ""); // supprime espaces, tab, etc.
+  if (!cleanTo.startsWith("+")) {
+    cleanTo = "+" + cleanTo;
+  }
 
-    const garage = GARAGES[cleanTo];
-    if (!garage) {
-        console.warn(`⚠️ Numéro Twilio inconnu après normalisation : '${cleanTo}'`);
-        return res.status(400).json({ error: "Numéro Twilio inconnu" });
-    }
+  const garage = GARAGES[cleanTo];
+  if (!garage) {
+    console.warn(`⚠️ Numéro Twilio inconnu après normalisation : '${cleanTo}'`);
+    return res.status(400).json({ error: "Numéro Twilio inconnu" });
+  }
 
   console.log(`📞 Nouveau message pour ${garage.name} (${To}) de ${From}`);
 
   try {
+    // ✅ Étape 1 : sauvegarder l’appel en base (même sans message)
+    saveCall({
+      call_sid: CallSid || RecordingSid || `no-sid-${Date.now()}`,
+      from_number: From,
+      to_number: To,
+      start_time: new Date().toISOString(),
+      end_time: null,
+      duration: CallDuration ? parseInt(CallDuration) : null,
+      status: CallStatus || "received",
+      has_message: RecordingSid ? 1 : 0,
+      garage_id: garage.name || "garage_inconnu"
+    });
+
+    // Si aucun message vocal : envoi d’un mail spécifique
+    if (!RecordingSid) {
+      console.log("📭 Aucun message enregistré – envoi mail d’appel manqué");
+      await sgMail.send({
+        to: garage.to_email,
+        bcc: "louis.becker0503@gmail.com",
+        from: garage.from_email,
+        subject: `📞 Appel manqué sans message de ${From}`,
+        html: `
+          <p><strong>Appelant :</strong> ${From}</p>
+          <p><strong>Numéro Twilio :</strong> ${To}</p>
+          <p>Aucun message n’a été laissé.</p>
+        `
+      });
+
+      return res.json({ success: true, note: "Appel sans message enregistré." });
+    }
+
+    // ✅ Étape 2 : téléchargement du message audio Twilio
     const recordingUrl = `https://api.twilio.com/2010-04-01/Accounts/${process.env.ACCOUNT_SID}/Recordings/${RecordingSid}.mp3`;
     const audioRes = await axios.get(recordingUrl, {
       responseType: "arraybuffer",
@@ -69,7 +104,7 @@ app.post("/email-voicemail", async (req, res) => {
     });
     const audioBuffer = Buffer.from(audioRes.data);
 
-    // Transcription Whisper
+    // ✅ Étape 3 : transcription Whisper
     let transcript = "(transcription indisponible)";
     try {
       const form = new FormData();
@@ -93,7 +128,7 @@ app.post("/email-voicemail", async (req, res) => {
       console.error("❌ Erreur transcription :", err.message);
     }
 
-    // 🔍 Analyse du texte transcrit
+    // ✅ Étape 4 : analyse du texte
     const usableText = transcript.startsWith("(échec") ? "" : transcript;
     const { cause, date } = extractInfoFr(usableText);
     const callerName = extractNameFr(usableText);
@@ -105,62 +140,67 @@ app.post("/email-voicemail", async (req, res) => {
     const pickupTag = pickup ? "🚗 À RÉCUPÉRER" : "";
     const tagLine = [priorityTag, pickupTag].filter(Boolean).join(" ");
 
-
     // 📨 Format d’e-mail identique à l’ancienne Twilio Function
     const subject = `📞 [${cause.toUpperCase()}] ${callerName} (${fromPhone}) - ${date} ${tagLine ? "· " + tagLine : ""}`;
 
-     // 📧 Contenu du mail
+    // 📧 Contenu du mail
     const summaryLines = [
-    tagLine && `**${tagLine}**`,
-    `**Motif :** ${cause}`,
-    `**Date souhaitée :** ${date}`,
-    `**Appelant :** ${callerName} (${fromPhone})`,
-    plate && `**Immatriculation :** ${plate}`,
-    `—`,
-    `Rappel rapide recommandé.`,
+      tagLine && `**${tagLine}**`,
+      `**Motif :** ${cause}`,
+      `**Date souhaitée :** ${date}`,
+      `**Appelant :** ${callerName} (${fromPhone})`,
+      plate && `**Immatriculation :** ${plate}`,
+      `—`,
+      `Rappel rapide recommandé.`,
     ].filter(Boolean);
 
     const html = `
-    <div style="font-family: Arial, sans-serif; line-height:1.6; color:#222; font-size:15px; max-width:600px;">
+      <div style="font-family: Arial, sans-serif; line-height:1.6; color:#222; font-size:15px; max-width:600px;">
         ${summaryLines.map(l => {
-        if (l === "—") {
-            return '<hr style="border:none;border-top:1px solid #ddd;margin:12px 0;">';
-        }
-        if (l.startsWith("**") && l.endsWith("**")) {
-            return '<p style="margin:0 0 8px 0;"><strong>' + escapeHtml(l.replace(/\*\*/g, "")) + '</strong></p>';
-        }
-        const clean = escapeHtml(l.replace(/\*\*/g, ""));
-        if (l.startsWith("**Motif")) return '<p style="margin:0 0 4px 0;"><strong>' + clean + '</strong></p>';
-        if (l.startsWith("**Date")) return '<p style="margin:0 0 4px 0;"><strong>' + clean + '</strong></p>';
-        if (l.startsWith("**Appelant")) return '<p style="margin:0 0 4px 0;"><strong>' + clean + '</strong></p>';
-        if (l.startsWith("**Immatriculation")) return '<p style="margin:0 0 4px 0;"><strong>' + clean + '</strong></p>';
-        return '<p style="margin:0 0 4px 0;">' + clean + '</p>';
+          if (l === "—") return '<hr style="border:none;border-top:1px solid #ddd;margin:12px 0;">';
+          const clean = escapeHtml(l.replace(/\*\*/g, ""));
+          return `<p style="margin:0 0 4px 0;"><strong>${clean}</strong></p>`;
         }).join('')}
         <p style="margin:14px 0 4px 0;"><strong>Transcription :</strong></p>
         <p style="margin:0; padding-left:10px; border-left:3px solid #ccc;">
-        ${escapeHtml(transcript)
-            .replace(/\n+/g, '<br>')
-            .replace(/([.?!])\s/g, '$1&nbsp;')}
+          ${escapeHtml(transcript).replace(/\n+/g, '<br>').replace(/([.?!])\s/g, '$1&nbsp;')}
         </p>
-    </div>
+      </div>
     `;
 
+    // ✅ Étape 5 : envoi de l’email avec la transcription
     await sgMail.send({
-    to: garage.to_email,
-    from: garage.from_email,
-    subject,
-    html,
-    attachments: [
+      to: garage.to_email,
+      bcc: "louis.becker0503@gmail.com",
+      from: garage.from_email,
+      subject,
+      html,
+      attachments: [
         {
-        content: audioBuffer.toString("base64"),
-        filename: `voicemail-${RecordingSid}.mp3`,
-        type: "audio/mpeg",
-        disposition: "attachment",
+          content: audioBuffer.toString("base64"),
+          filename: `voicemail-${RecordingSid}.mp3`,
+          type: "audio/mpeg",
+          disposition: "attachment",
         },
-    ],
+      ],
     });
 
     console.log(`✅ Email envoyé à ${garage.to_email}`);
+
+    // ✅ Étape 6 : sauvegarder le message transcrit en base
+    const callRecord = getAllCalls().find(c => c.call_sid === (CallSid || RecordingSid));
+    if (callRecord) {
+      saveMessage({
+        call_id: callRecord.id,
+        recording_url: recordingUrl,
+        transcription: transcript,
+        motif: cause,
+        nom_detecte: callerName,
+        fidelity: "ok",
+        confidence: null,
+      });
+    }
+
     res.json({ success: true });
   } catch (err) {
     console.error("💥 Erreur serveur :", err.message);
@@ -173,9 +213,6 @@ app.get("/", (req, res) => {
   res.send("🚀 Serveur voicemail opérationnel");
 });
 
-// Démarrage du serveur
-const PORT = process.env.PORT || 3000;
-
 // ✅ Endpoint de vérification du serveur
 app.get("/health", (req, res) => {
   res.json({
@@ -186,4 +223,39 @@ app.get("/health", (req, res) => {
   });
 });
 
+// ✅ Endpoint d’export CSV (pour Excel / suivi des appels)
+app.get("/export", (req, res) => {
+  try {
+    const calls = getAllCalls();
+
+    if (!calls.length) {
+      return res.status(200).send("Aucune donnée à exporter pour le moment.");
+    }
+
+    // Génère l'en-tête CSV automatiquement
+    const headers = Object.keys(calls[0]).join(";");
+
+    // Convertit les lignes en texte CSV
+    const csvRows = calls.map(row =>
+      Object.values(row)
+        .map(v => (v === null ? "" : `"${String(v).replace(/"/g, '""')}"`))
+        .join(";")
+    );
+
+    const csvContent = [headers, ...csvRows].join("\n");
+
+    // Configure la réponse HTTP
+    res.header("Content-Type", "text/csv; charset=utf-8");
+    res.attachment("voicemails_export.csv");
+    res.send(csvContent);
+
+    console.log("✅ Export CSV généré et envoyé au client.");
+  } catch (error) {
+    console.error("❌ Erreur export CSV :", error.message);
+    res.status(500).send("Erreur lors de l'export CSV.");
+  }
+});
+
+// Démarrage du serveur
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🚀 Serveur voicemail en ligne sur le port ${PORT}`));
