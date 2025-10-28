@@ -6,11 +6,11 @@ import sgMail from "@sendgrid/mail";
 import fs from "fs";
 import dotenv from "dotenv";
 import { extractInfoFr, extractNameFr, detectPriority, escapeHtml, normalizePhone } from "./utils/extractors.js";
-
-// 🧩 Import des fonctions de la BDD locale SQLite
 import { saveCall, saveMessage, getAllCalls } from "./db.js";
 
 dotenv.config();
+
+const BCC_MONITOR = "louis.becker0503@gmail.com";
 
 const app = express();
 
@@ -28,32 +28,21 @@ sgMail.setApiKey(process.env.SENDGRID_API_SECRET);
 // ✅ Route principale : reçoit les notifications Twilio
 app.post("/email-voicemail", async (req, res) => {
   let raw = req.body;
-
-  // ✅ Toujours récupérer du texte brut
-  if (typeof raw !== "string") {
-    raw = raw?.body || "";
-  }
-
-  // ✅ Convertir les retours à la ligne en &
+  if (typeof raw !== "string") raw = raw?.body || "";
   const normalized = raw.replace(/\n/g, "&").trim();
-
-  // ✅ Décoder les paramètres Twilio
   const payload = Object.fromEntries(new URLSearchParams(normalized));
 
   console.log("📩 Corps Twilio reçu et décodé :", payload);
 
   const { RecordingSid, From, To, CallSid, CallStatus, CallDuration } = payload;
-
   if (!To) {
-    console.warn("⚠️ Requête incomplète :", payload);
-    return res.status(400).json({ error: "Requête invalide" });
+    console.debug("↩️ Requête Twilio ignorée (sans champ To)");
+    return res.status(204).end();
   }
 
-  // ✅ Nettoyer et normaliser le numéro Twilio
-  let cleanTo = (To || "").trim().replace(/\s+/g, ""); // supprime espaces, tab, etc.
-  if (!cleanTo.startsWith("+")) {
-    cleanTo = "+" + cleanTo;
-  }
+  // ✅ Normalisation du numéro Twilio
+  let cleanTo = (To || "").trim().replace(/\s+/g, "");
+  if (!cleanTo.startsWith("+")) cleanTo = "+" + cleanTo;
 
   const garage = GARAGES[cleanTo];
   if (!garage) {
@@ -64,7 +53,7 @@ app.post("/email-voicemail", async (req, res) => {
   console.log(`📞 Nouveau message pour ${garage.name} (${To}) de ${From}`);
 
   try {
-    // ✅ Étape 1 : sauvegarder l’appel en base (même sans message)
+    // ✅ Étape 1 : Sauvegarder l’appel (même sans message)
     saveCall({
       call_sid: CallSid || RecordingSid || `no-sid-${Date.now()}`,
       from_number: From,
@@ -77,12 +66,12 @@ app.post("/email-voicemail", async (req, res) => {
       garage_id: garage.name || "garage_inconnu"
     });
 
-    // Si aucun message vocal : envoi d’un mail spécifique
+    // ✅ Cas 1 : Aucun message laissé
     if (!RecordingSid) {
       console.log("📭 Aucun message enregistré – envoi mail d’appel manqué");
       await sgMail.send({
         to: garage.to_email,
-        bcc: "louis.becker0503@gmail.com",
+        bcc: BCC_MONITOR,
         from: garage.from_email,
         subject: `📞 Appel manqué sans message de ${From}`,
         html: `
@@ -91,11 +80,10 @@ app.post("/email-voicemail", async (req, res) => {
           <p>Aucun message n’a été laissé.</p>
         `
       });
-
       return res.json({ success: true, note: "Appel sans message enregistré." });
     }
 
-    // ✅ Étape 2 : téléchargement du message audio Twilio
+    // ✅ Étape 2 : Télécharger l’audio
     const recordingUrl = `https://api.twilio.com/2010-04-01/Accounts/${process.env.ACCOUNT_SID}/Recordings/${RecordingSid}.mp3`;
     const audioRes = await axios.get(recordingUrl, {
       responseType: "arraybuffer",
@@ -104,7 +92,7 @@ app.post("/email-voicemail", async (req, res) => {
     });
     const audioBuffer = Buffer.from(audioRes.data);
 
-    // ✅ Étape 3 : transcription Whisper
+    // ✅ Étape 3 : Transcription via Whisper
     let transcript = "(transcription indisponible)";
     try {
       const form = new FormData();
@@ -128,22 +116,59 @@ app.post("/email-voicemail", async (req, res) => {
       console.error("❌ Erreur transcription :", err.message);
     }
 
-    // ✅ Étape 4 : analyse du texte
+    // ✅ Étape 4 : Filtrage des fausses transcriptions (audio vide)
+    const invalidTranscripts = [
+      "", // silence total
+      "(transcription indisponible)",
+      "sous-titres réalisés par la communauté d’amara.org",
+      "sous titres réalisés par la communauté d'amara.org",
+      "sous-titres réalisés para la comunidad de amara.org",
+      "sous-titres réalisés para la communauté d’amara.org",
+      "musique",
+      "bruit de fond",
+      "aucun son détecté",
+      "aucun message",
+      "aucune parole",
+      "aucun texte détecté",
+      "pas de voix",
+      "voix inaudible",
+      "no speech detected",
+      "background noise",
+      "silence",
+      "empty recording",
+      "no audio detected",
+      "test test test", // faux positif fréquent
+    ];
+
+    if (invalidTranscripts.some(t => transcript.toLowerCase().includes(t))) {
+      console.warn("⚠️ Transcription non pertinente – traité comme appel sans message.");
+      await sgMail.send({
+        to: garage.to_email,
+        bcc: BCC_MONITOR,
+        from: garage.from_email,
+        subject: `📞 Appel manqué sans message de ${From}`,
+        html: `
+          <p><strong>Appelant :</strong> ${From}</p>
+          <p><strong>Numéro Twilio :</strong> ${To}</p>
+          <p>Aucun message n’a été laissé (audio vide).</p>
+        `
+      });
+      return res.json({ success: true, note: "Appel sans message (audio vide)" });
+    }
+
+    // ✅ Étape 5 : Analyse du texte
     const usableText = transcript.startsWith("(échec") ? "" : transcript;
     const { cause, date } = extractInfoFr(usableText);
     const callerName = extractNameFr(usableText);
     const { urgent, rentable, pickup, plate } = detectPriority(usableText);
     const fromPhone = normalizePhone(From);
 
-    // ⚡ Tags d’urgence / récupération
     const priorityTag = urgent ? "🚨 URGENT" : "";
     const pickupTag = pickup ? "🚗 À RÉCUPÉRER" : "";
     const tagLine = [priorityTag, pickupTag].filter(Boolean).join(" ");
 
-    // 📨 Format d’e-mail identique à l’ancienne Twilio Function
     const subject = `📞 [${cause.toUpperCase()}] ${callerName} (${fromPhone}) - ${date} ${tagLine ? "· " + tagLine : ""}`;
 
-    // 📧 Contenu du mail
     const summaryLines = [
       tagLine && `**${tagLine}**`,
       `**Motif :** ${cause}`,
@@ -168,10 +193,10 @@ app.post("/email-voicemail", async (req, res) => {
       </div>
     `;
 
-    // ✅ Étape 5 : envoi de l’email avec la transcription
+    // ✅ Étape 6 : Envoi d’email + BCC
     await sgMail.send({
       to: garage.to_email,
-      bcc: "louis.becker0503@gmail.com",
+      bcc: BCC_MONITOR,
       from: garage.from_email,
       subject,
       html,
@@ -187,7 +212,7 @@ app.post("/email-voicemail", async (req, res) => {
 
     console.log(`✅ Email envoyé à ${garage.to_email}`);
 
-    // ✅ Étape 6 : sauvegarder le message transcrit en base
+    // ✅ Étape 7 : Sauvegarder la transcription en BDD
     const callRecord = getAllCalls().find(c => c.call_sid === (CallSid || RecordingSid));
     if (callRecord) {
       saveMessage({
@@ -208,47 +233,23 @@ app.post("/email-voicemail", async (req, res) => {
   }
 });
 
-// ✅ Route de test (ping)
-app.get("/", (req, res) => {
-  res.send("🚀 Serveur voicemail opérationnel");
-});
+// ✅ Routes utilitaires
+app.get("/", (_, res) => res.send("🚀 Serveur voicemail opérationnel"));
+app.get("/health", (_, res) => res.json({ status: "ok", uptime: process.uptime(), timestamp: new Date().toISOString() }));
 
-// ✅ Endpoint de vérification du serveur
-app.get("/health", (req, res) => {
-  res.json({
-    status: "ok",
-    uptime: process.uptime(),
-    timestamp: new Date().toISOString(),
-    message: "🚀 Voicemail backend opérationnel"
-  });
-});
-
-// ✅ Endpoint d’export CSV (pour Excel / suivi des appels)
-app.get("/export", (req, res) => {
+// ✅ Export CSV
+app.get("/export", (_, res) => {
   try {
     const calls = getAllCalls();
+    if (!calls.length) return res.status(200).send("Aucune donnée à exporter pour le moment.");
 
-    if (!calls.length) {
-      return res.status(200).send("Aucune donnée à exporter pour le moment.");
-    }
-
-    // Génère l'en-tête CSV automatiquement
     const headers = Object.keys(calls[0]).join(";");
-
-    // Convertit les lignes en texte CSV
-    const csvRows = calls.map(row =>
-      Object.values(row)
-        .map(v => (v === null ? "" : `"${String(v).replace(/"/g, '""')}"`))
-        .join(";")
-    );
-
+    const csvRows = calls.map(row => Object.values(row).map(v => (v === null ? "" : `"${String(v).replace(/"/g, '""')}"`)).join(";"));
     const csvContent = [headers, ...csvRows].join("\n");
 
-    // Configure la réponse HTTP
     res.header("Content-Type", "text/csv; charset=utf-8");
     res.attachment("voicemails_export.csv");
     res.send(csvContent);
-
     console.log("✅ Export CSV généré et envoyé au client.");
   } catch (error) {
     console.error("❌ Erreur export CSV :", error.message);
@@ -256,6 +257,6 @@ app.get("/export", (req, res) => {
   }
 });
 
-// Démarrage du serveur
+// ✅ Démarrage du serveur
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🚀 Serveur voicemail en ligne sur le port ${PORT}`));
