@@ -296,6 +296,41 @@ app.get("/export", (_, res) => {
   }
 });
 
+// ✅ Nouvelle route TwiML pour enregistrer le message vocal de manière fiable
+app.post("/twiml/voicemail/:to", async (req, res) => {
+  try {
+    const to = decodeURIComponent(req.params.to);
+    const garage = GARAGES[to];
+
+    if (!garage) {
+      console.warn(`⚠️ Numéro Twilio inconnu pour route TwiML : ${to}`);
+      return res.type("text/xml").send(`
+        <Response>
+          <Say>Numéro de garage inconnu. Merci de réessayer plus tard.</Say>
+        </Response>
+      `);
+    }
+
+    const callbackUrl = "https://voicemail-assistant-hwa4dpesahema3aa.francecentral-01.azurewebsites.net/email-voicemail";
+
+    res.type("text/xml");
+    res.send(`
+      <Response>
+        <Say voice="alice">Merci, laissez votre message après le bip.</Say>
+        <Record
+          maxLength="120"
+          playBeep="true"
+          recordingStatusCallback="${callbackUrl}"
+          recordingStatusCallbackMethod="POST"
+        />
+      </Response>
+    `);
+  } catch (err) {
+    console.error("💥 Erreur dans /twiml/voicemail :", err.message);
+    res.type("text/xml").send(`<Response><Say>Erreur interne, désolé.</Say></Response>`);
+  }
+});
+
 // ✅ Démarrage du serveur
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🚀 Serveur voicemail en ligne sur le port ${PORT}`));
