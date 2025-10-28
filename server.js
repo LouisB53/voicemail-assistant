@@ -175,4 +175,15 @@ app.get("/", (req, res) => {
 
 // Démarrage du serveur
 const PORT = process.env.PORT || 3000;
+
+// ✅ Endpoint de vérification du serveur
+app.get("/health", (req, res) => {
+  res.json({
+    status: "ok",
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+    message: "🚀 Voicemail backend opérationnel"
+  });
+});
+
 app.listen(PORT, () => console.log(`🚀 Serveur voicemail en ligne sur le port ${PORT}`));
