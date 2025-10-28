@@ -85,6 +85,7 @@ app.post("/email-voicemail", async (req, res) => {
 
     // ✅ Étape 2 : Télécharger l’audio
     const recordingUrl = `https://api.twilio.com/2010-04-01/Accounts/${process.env.ACCOUNT_SID}/Recordings/${RecordingSid}.mp3`;
+    console.log("🎧 Tentative de téléchargement audio :", recordingUrl);
     const audioRes = await axios.get(recordingUrl, {
       responseType: "arraybuffer",
       auth: { username: process.env.ACCOUNT_SID, password: process.env.AUTH_TOKEN },
