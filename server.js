@@ -117,49 +117,59 @@ app.post("/email-voicemail", async (req, res) => {
       console.error("❌ Erreur transcription :", err.message);
     }
 
-  // ✅ Étape 4 : Filtrage intelligent des transcriptions réellement vides
-  const invalidTranscripts = [
-    "sous-titres réalisés par la communauté d’amara.org",
-    "sous titres réalisés par la communauté d'amara.org",
-    "sous-titres réalisés para la comunidad de amara.org",
-    "sous-titres réalisés para la communauté d’amara.org",
-    "musique",
-    "bruit de fond",
-    "aucun son détecté",
-    "aucun message",
-    "aucune parole",
-    "pas de voix",
-    "voix inaudible",
-    "no speech detected",
-    "background noise",
-    "silence",
-    "empty recording",
-    "no audio detected",
-  ];
+  // ✅ Étape 4 : Détection stricte des transcriptions purement parasites
+const invalidTranscripts = [
+  "sous-titres réalisés par la communauté d’amara.org",
+  "sous titres réalisés par la communauté d'amara.org",
+  "sous-titres réalisés para la comunidad de amara.org",
+  "sous-titres réalisés para la communauté d’amara.org",
+  "musique",
+  "bruit de fond",
+  "aucun son détecté",
+  "aucun message",
+  "aucune parole",
+  "pas de voix",
+  "voix inaudible",
+  "no speech detected",
+  "background noise",
+  "silence",
+  "empty recording",
+  "no audio detected"
+];
 
-  const lowerTranscript = transcript.toLowerCase().trim();
+const lowerTranscript = transcript.toLowerCase().trim();
 
-  // 🚫 Si la transcription est trop courte OU ne contient *que* des phrases parasites
-  const isCompletelyInvalid =
-    lowerTranscript.length < 10 ||
-    invalidTranscripts.some(t => lowerTranscript === t) || // strict match
-    invalidTranscripts.every(t => lowerTranscript.includes(t)); // contient uniquement des fragments parasites
+// ✅ On supprime toute ponctuation / espace / accents pour comparaison plus robuste
+const normalizedTranscript = lowerTranscript
+  .normalize("NFD")
+  .replace(/[\u0300-\u036f]/g, "")
+  .replace(/[.,;:!?'"()\[\]\s]/g, "");
 
-  if (isCompletelyInvalid) {
-    console.warn("⚠️ Transcription non pertinente – traité comme appel sans message.");
-    await sgMail.send({
-      to: garage.to_email,
-      bcc: "louis.becker0503@gmail.com",
-      from: garage.from_email,
-      subject: `📞 Appel manqué sans message de ${From}`,
-      html: `
-        <p><strong>Appelant :</strong> ${From}</p>
-        <p><strong>Numéro Twilio :</strong> ${To}</p>
-        <p>Aucun message n’a été laissé (audio vide).</p>
-      `
-    });
-    return res.json({ success: true, note: "Appel sans message (audio vide)" });
-  }
+// ✅ Si la transcription correspond *exactement* à une phrase parasite, on la rejette
+const isPurelyInvalid = invalidTranscripts.some(t => {
+  const norm = t
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[.,;:!?'"()\[\]\s]/g, "");
+  return normalizedTranscript === norm;
+});
+
+if (isPurelyInvalid) {
+  console.warn("⚠️ Transcription parasite détectée – traité comme appel sans message.");
+  await sgMail.send({
+    to: garage.to_email,
+    bcc: "louis.becker0503@gmail.com",
+    from: garage.from_email,
+    subject: `📞 Appel manqué sans message de ${From}`,
+    html: `
+      <p><strong>Appelant :</strong> ${From}</p>
+      <p><strong>Numéro Twilio :</strong> ${To}</p>
+      <p>Aucun message n’a été laissé (transcription parasite détectée).</p>
+    `
+  });
+  return res.json({ success: true, note: "Appel sans message (transcription parasite)" });
+}
 
     // ✅ Étape 5 : Analyse du texte
     const usableText = transcript.startsWith("(échec") ? "" : transcript;
