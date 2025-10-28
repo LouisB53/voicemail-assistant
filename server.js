@@ -117,45 +117,45 @@ app.post("/email-voicemail", async (req, res) => {
       console.error("❌ Erreur transcription :", err.message);
     }
 
-    // ✅ Étape 4 : Filtrage des fausses transcriptions (audio vide)
-    const invalidTranscripts = [
-      "", // silence total
-      "(transcription indisponible)",
-      "sous-titres réalisés par la communauté d’amara.org",
-      "sous titres réalisés par la communauté d'amara.org",
-      "sous-titres réalisés para la comunidad de amara.org",
-      "sous-titres réalisés para la communauté d’amara.org",
-      "musique",
-      "bruit de fond",
-      "aucun son détecté",
-      "aucun message",
-      "aucune parole",
-      "aucun texte détecté",
-      "pas de voix",
-      "voix inaudible",
-      "no speech detected",
-      "background noise",
-      "silence",
-      "empty recording",
-      "no audio detected",
-      "test test test", // faux positif fréquent
-    ];
+    // // ✅ Étape 4 : Filtrage des fausses transcriptions (audio vide)
+    // const invalidTranscripts = [
+    //   "", // silence total
+    //   "(transcription indisponible)",
+    //   "sous-titres réalisés par la communauté d’amara.org",
+    //   "sous titres réalisés par la communauté d'amara.org",
+    //   "sous-titres réalisés para la comunidad de amara.org",
+    //   "sous-titres réalisés para la communauté d’amara.org",
+    //   "musique",
+    //   "bruit de fond",
+    //   "aucun son détecté",
+    //   "aucun message",
+    //   "aucune parole",
+    //   "aucun texte détecté",
+    //   "pas de voix",
+    //   "voix inaudible",
+    //   "no speech detected",
+    //   "background noise",
+    //   "silence",
+    //   "empty recording",
+    //   "no audio detected",
+    //   "test test test", // faux positif fréquent
+    // ];
 
-    if (invalidTranscripts.some(t => transcript.toLowerCase().includes(t))) {
-      console.warn("⚠️ Transcription non pertinente – traité comme appel sans message.");
-      await sgMail.send({
-        to: garage.to_email,
-        bcc: BCC_MONITOR,
-        from: garage.from_email,
-        subject: `📞 Appel manqué sans message de ${From}`,
-        html: `
-          <p><strong>Appelant :</strong> ${From}</p>
-          <p><strong>Numéro Twilio :</strong> ${To}</p>
-          <p>Aucun message n’a été laissé (audio vide).</p>
-        `
-      });
-      return res.json({ success: true, note: "Appel sans message (audio vide)" });
-    }
+    // if (invalidTranscripts.some(t => transcript.toLowerCase().includes(t))) {
+    //   console.warn("⚠️ Transcription non pertinente – traité comme appel sans message.");
+    //   await sgMail.send({
+    //     to: garage.to_email,
+    //     bcc: BCC_MONITOR,
+    //     from: garage.from_email,
+    //     subject: `📞 Appel manqué sans message de ${From}`,
+    //     html: `
+    //       <p><strong>Appelant :</strong> ${From}</p>
+    //       <p><strong>Numéro Twilio :</strong> ${To}</p>
+    //       <p>Aucun message n’a été laissé (audio vide).</p>
+    //     `
+    //   });
+    //   return res.json({ success: true, note: "Appel sans message (audio vide)" });
+    // } 
 
     // ✅ Étape 5 : Analyse du texte
     const usableText = transcript.startsWith("(échec") ? "" : transcript;
