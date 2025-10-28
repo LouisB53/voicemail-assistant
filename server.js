@@ -316,10 +316,13 @@ app.post("/twiml/voicemail/:to", async (req, res) => {
     res.type("text/xml");
     res.send(`
       <Response>
-        <Say voice="alice">Merci, laissez votre message après le bip.</Say>
+        <Say language="fr-FR" voice="alice">Merci, laissez votre message après le bip.</Say>
         <Record
           maxLength="120"
           playBeep="true"
+          trim="trim-silence"
+          action="${callbackUrl}"
+          method="POST"
           recordingStatusCallback="${callbackUrl}"
           recordingStatusCallbackMethod="POST"
         />
