@@ -34,9 +34,33 @@ app.post("/email-voicemail", async (req, res) => {
 
   console.log("📩 Corps Twilio reçu et décodé :", payload);
 
-  const { RecordingSid, From, To, CallSid, CallStatus, CallDuration } = payload;
+  // 🧠 Étape de rattrapage Twilio — certains callbacks manquent les champs To/From
+  let { RecordingSid, From, To, CallSid, CallStatus, CallDuration } = payload;
+
+  // Si Twilio a oublié d’envoyer To/From (souvent le cas quand l’appelant raccroche), on va les récupérer via l’API
+  if ((!To || !From) && CallSid) {
+    try {
+      console.log("🔍 Tentative de récupération des infos d’appel via l’API Twilio...");
+      const twilioRes = await axios.get(
+        `https://api.twilio.com/2010-04-01/Accounts/${process.env.ACCOUNT_SID}/Calls/${CallSid}.json`,
+        {
+          auth: { username: process.env.ACCOUNT_SID, password: process.env.AUTH_TOKEN },
+        }
+      );
+
+      // Twilio renvoie les vrais numéros dans la réponse JSON
+      To = twilioRes.data.to;
+      From = twilioRes.data.from;
+
+      console.log(`✅ Infos d’appel récupérées depuis Twilio : From=${From}, To=${To}`);
+    } catch (err) {
+      console.warn("⚠️ Impossible de récupérer les infos via Twilio API :", err.message);
+    }
+  }
+
+  // Si après récupération il manque toujours le numéro destinataire, on ignore proprement
   if (!To) {
-    console.debug("↩️ Requête Twilio ignorée (sans champ To)");
+    console.debug("↩️ Requête Twilio ignorée (aucun numéro destinataire trouvé).");
     return res.status(204).end();
   }
 
