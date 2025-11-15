@@ -97,7 +97,7 @@ async function processVoicemail(payload) {
             html: `
                 <p><strong>Appelant :</strong> ${From}</p>
                 <p><strong>Numéro Twilio :</strong> ${To}</p>
-                <p>Aucun message n’a été laissé (ou message trop court).</p>
+                <p>Aucun message n’a été laissé (ou message vide).</p>
             `
         });
         return; 
@@ -208,13 +208,13 @@ app.post("/email-voicemail", async (req, res) => {
     // 💡 Simplification du parsing : req.body est déjà l'objet POST de Twilio
     const payload = req.body; 
     
-    // Le reste du code reste le même
-    
     // Vous pouvez garder cette ligne pour le debug
     console.log("📩 Corps Twilio reçu et décodé :", payload); 
 
-    // 🚨 CLÉ DE LA ROBUSTESSE : Réponse immédiate à Twilio
-    res.json({ received: true, note: "Processing asynchronously" });
+    // 🚨 CLÉ DE LA ROBUSTESSE : Réponse IMMÉDIATE à Twilio avec TwiML de Raccrochage
+    // Twilio attend un TwiML (XML) en réponse à l'action Record.
+    res.type('text/xml');
+    res.send('<Response><Hangup/></Response>');
 
     // 🚀 Déclenchement Asynchrone : On lance le travail lourd sans bloquer la route
     processVoicemail(payload);
@@ -260,6 +260,58 @@ app.post("/twiml/voicemail/:to", async (req, res) => {
     }
 });
 
+// --- NOUVELLE ROUTE : GESTION DES CHANGEMENTS DE STATUT D'APPEL ---
+app.post("/missed-call-email", async (req, res) => {
+    // 1. Réponse immédiate à Twilio pour éviter les timeouts
+    res.json({ received: true }); 
+
+    const payload = req.body;
+    const { CallSid, CallStatus, From, To } = payload;
+    
+    // Nous ne traitons que les statuts de fin d'appel
+    if (!['completed', 'no-answer', 'busy', 'failed'].includes(CallStatus)) {
+        return; 
+    }
+
+    try {
+        // Chercher la configuration du garage (nécessaire pour l'email)
+        let cleanTo = (To || "").trim().replace(/\s+/g, "");
+        if (!cleanTo.startsWith("+")) cleanTo = "+" + cleanTo;
+        const garage = GARAGES[cleanTo];
+
+        if (!garage) {
+            console.warn(`⚠️ [Status Update] Numéro Twilio inconnu : '${cleanTo}'`);
+            return;
+        }
+
+        // Vérifier via l'API Twilio si un enregistrement existe pour ce CallSid.
+        // Si un enregistrement existe, le mail a été envoyé par processVoicemail (/email-voicemail), donc on ignore.
+        const recordings = await twilioClient.recordings.list({ callSid: CallSid, limit: 1 });
+        
+        if (recordings && recordings.length > 0) {
+            console.log(`ℹ️ [Status Update] Enregistrement trouvé pour ${CallSid}. Déjà traité par la route /email-voicemail. Ignoré.`);
+            return;
+        }
+        
+        // Si aucun enregistrement n'est trouvé, c'est un vrai appel manqué sans message.
+        console.log(`📭 [Status Update] Appel manqué sans message (raccrochage précoce) détecté pour ${CallSid}. Envoi email.`);
+        
+        // Envoi de l'email d'appel manqué
+        await sgMail.send({
+            to: garage.to_email,
+            bcc: BCC_MONITOR,
+            from: garage.from_email,
+            subject: `📞 Appel manqué sans message de ${From}`,
+            html: `
+                <p><strong>Appelant :</strong> ${From}</p>
+                <p>Aucun message n’a été laissé.</p>
+            `
+        });
+
+    } catch (err) {
+        console.error("❌ Erreur dans le traitement de l'état de l'appel:", err.message);
+    }
+});
 
 // ✅ Démarrage du serveur
 const PORT = process.env.PORT || 3000;
