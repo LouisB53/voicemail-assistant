@@ -226,6 +226,14 @@ async function processVoicemail(payload) {
             sent_at: new Date().toISOString()
         });
 
+        // --- 9. SUPPRESSION RGPD DE L'ENREGISTREMENT ---
+        try {
+            await twilioClient.recordings(RecordingSid).remove();
+            console.log(`✅ Enregistrement Twilio ${RecordingSid} supprimé pour des raisons RGPD.`);
+        } catch (err) {
+            console.warn(`⚠️ ERREUR: Impossible de supprimer l'enregistrement ${RecordingSid} sur Twilio:`, err.message);
+        }
+
     } catch (err) {
         console.error("💥 Erreur serveur pendant le traitement lourd:", err.message);
         // Alertes ici
