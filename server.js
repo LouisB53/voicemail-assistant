@@ -1,4 +1,4 @@
-// server.js (Code COMPLET refactorisé)
+// server.js (Code COMPLET refactorisé et finalisé)
 
 import express from "express";
 import axios from "axios";
@@ -52,15 +52,6 @@ sgMail.setApiKey(process.env.SENDGRID_API_SECRET);
 
 // --- FIN DU BLOC MODIFIÉ ---
 
-
-/**
- * ⚙️ Fonction de Traitement Lourd Asynchrone (Whisper, GPT, Email)
- * Cette fonction est appelée sans "await" par la route Twilio.
- */
-/**
- * ⚙️ Fonction de Traitement Lourd Asynchrone (Whisper, GPT, Email)
- * Cette fonction est appelée sans "await" par la route Twilio.
- */
 /**
  * ⚙️ Fonction de Traitement Lourd Asynchrone (Whisper, GPT, Email)
  * Cette fonction est appelée sans "await" par la route Twilio.
@@ -74,6 +65,8 @@ async function processVoicemail(payload) {
     let cleanTo = (To || "").trim().replace(/\s+/g, "");
     if (!cleanTo.startsWith("+")) cleanTo = "+" + cleanTo;
     const garage = GARAGES[cleanTo];
+    
+    const callUniqueId = CallSid || RecordingSid || `no-sid-${Date.now()}`;
 
     if (!garage) {
         console.warn(`⚠️ Traitement annulé: Numéro Twilio inconnu après normalisation : '${cleanTo}'`);
@@ -93,7 +86,7 @@ async function processVoicemail(payload) {
 
     // --- 2. Sauvegarder l’appel ---
     saveCall({
-        call_sid: CallSid || RecordingSid || `no-sid-${Date.now()}`,
+        call_sid: callUniqueId,
         from_number: From,
         to_number: To,
         start_time: new Date().toISOString(),
@@ -123,6 +116,13 @@ async function processVoicemail(payload) {
         return; 
     }
 
+    let transcript = "(transcription indisponible)";
+    let name = "(non spécifié)";
+    let motive = "(à déterminer)";
+    let date_preference = "Indéterminée";
+    let is_urgent = false;
+    let plate_number = null;
+
     try {
         // --- 4. Télécharger l’audio ---
         const recordingUrl = `https://api.twilio.com/2010-04-01/Accounts/${process.env.ACCOUNT_SID}/Recordings/${RecordingSid}.mp3`;
@@ -135,7 +135,6 @@ async function processVoicemail(payload) {
         console.log(`✅ Téléchargement audio réussi: ${RecordingSid}`);
         
         // --- 5. Transcription via Whisper (Réactivation de l'API OpenAI) ---
-        let transcript = "(transcription indisponible)";
         try {
             const OpenAI = (await import('openai')).default;
             const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -162,18 +161,20 @@ async function processVoicemail(payload) {
         }
 
         // --- 6. Analyse du texte via GPT (CLÉ DE L'AMÉLIORATION) ---
-        const { name, motive, date_preference, is_urgent, plate_number } = await extractInfoGPT(transcript);
-        
+        const { name, motive_legend, motive_details, date_preference, is_urgent, plate_number } = await extractInfoGPT(transcript);
+
         // --- 7. Construction et Envoi d’Email ---
         const fromPhone = normalizePhone(From);
         const priorityTag = is_urgent ? "🚨 URGENT" : "";
         const tagLine = [priorityTag].filter(Boolean).join(" ");
-        
-        const subject = `📞 [${motive.toUpperCase()}] ${name} (${fromPhone}) - ${date_preference} ${tagLine ? "· " + tagLine : ""}`;
+
+        // Utilisation de motive_legend dans l'objet et motive_details dans l'en-tête
+        const subject = `📞 [${motive_legend.toUpperCase()}] ${name} (${fromPhone}) - ${date_preference} ${tagLine ? "· " + tagLine : ""}`;
 
         const summaryLines = [
             tagLine && `**${tagLine}**`,
-            `**Motif :** ${motive}`,
+            `**Motif principal :** ${motive_legend}`, // Le motif catégorisé
+            `**Détail du besoin :** ${motive_details}`, // Le résumé précis
             `**Date souhaitée :** ${date_preference}`,
             `**Appelant :** ${name} (${fromPhone})`,
             plate_number && `**Immatriculation :** ${plate_number}`,
@@ -214,7 +215,16 @@ async function processVoicemail(payload) {
         console.log(`✅ Email envoyé à ${garage.to_email}`);
         
         // --- 8. Sauvegarder en BDD ---
-        // ... (Ton code saveMessage) ...
+        // 🚨 BRIQUE MANQUANTE AJOUTÉE ICI 🚨
+        saveMessage({
+            call_sid: callUniqueId,
+            garage_id: garage.name,
+            from_number: From,
+            transcript: transcript,
+            // Sauvegarde des deux motifs dans l'analyse JSON
+            analysis: JSON.stringify({ name, motive_legend, motive_details, date_preference, is_urgent, plate_number }),
+            sent_at: new Date().toISOString()
+        });
 
     } catch (err) {
         console.error("💥 Erreur serveur pendant le traitement lourd:", err.message);
@@ -243,7 +253,38 @@ app.post("/email-voicemail", async (req, res) => {
 });
 
 
-// ... (Routes utilitaires : /, /health, /export) ...
+// --------------------------------------------------------------------------------
+// --- AJOUT DES ROUTES UTILITAIRES (Pour la surveillance et l'exportation) ---
+// --------------------------------------------------------------------------------
+
+// Route d'accueil simple
+app.get("/", (req, res) => {
+    res.send("🤖 Serveur Voicemail Assistant en ligne et opérationnel.");
+});
+
+// Route de santé (Health Check) pour Azure App Service
+app.get("/health", (req, res) => {
+    // Un simple test pour vérifier que l'App Service est en vie
+    res.status(200).json({ status: "ok", service: "voicemail-assistant" });
+});
+
+// Route d'exportation des données (pour le débogage ou l'analyse)
+app.get("/export", async (req, res) => {
+    try {
+        const calls = await getAllCalls(); // Assurez-vous que cette fonction est implémentée dans db.js
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Content-Disposition', 'attachment; filename="calls_export.json"');
+        res.status(200).send(JSON.stringify(calls, null, 2));
+    } catch (error) {
+        console.error("Erreur lors de l'exportation des données:", error);
+        res.status(500).send("Erreur interne lors de l'exportation.");
+    }
+});
+
+// --------------------------------------------------------------------------------
+// --- FIN DES ROUTES UTILITAIRES ---
+// --------------------------------------------------------------------------------
+
 
 // --- ROUTE TWIML POUR ENREGISTREMENT FIABLE ---
 app.post("/twiml/voicemail/:to", async (req, res) => {
