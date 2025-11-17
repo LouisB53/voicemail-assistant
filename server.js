@@ -26,11 +26,31 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(express.text({ type: "*/*" }));
 
-// Charger la configuration des garages
-const GARAGES = JSON.parse(fs.readFileSync("./garages.json", "utf-8"));
+// --- DÉBUT DU BLOC MODIFIÉ POUR LA SÉCURITÉ ET AZURE APP SERVICE ---
+
+// Charger la configuration des garages (priorité à la variable d'environnement Azure pour la sécurité)
+let GARAGES;
+const configString = process.env.GARAGES_CONFIG;
+
+if (configString) {
+    try {
+        GARAGES = JSON.parse(configString);
+        console.log("✅ Configuration des garages chargée depuis la variable d'environnement Azure.");
+    } catch (error) {
+        console.error("❌ ERREUR: Impossible de parser la variable GARAGES_CONFIG. Utilisation du fichier local.", error);
+        // Fallback si le JSON est mal formaté (utile pour les tests locaux)
+        GARAGES = JSON.parse(fs.readFileSync("./garages.json", "utf-8")); 
+    }
+} else {
+    // Si la variable n'existe pas (par exemple, en développement local), utilise le fichier.
+    console.warn("⚠️ Variable GARAGES_CONFIG non trouvée. Utilisation du fichier local garages.json.");
+    GARAGES = JSON.parse(fs.readFileSync("./garages.json", "utf-8"));
+}
 
 // Configurer SendGrid
 sgMail.setApiKey(process.env.SENDGRID_API_SECRET);
+
+// --- FIN DU BLOC MODIFIÉ ---
 
 
 /**
