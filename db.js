@@ -62,7 +62,18 @@ export function saveMessage(messageData) {
   stmt.run(messageData);
 }
 
-// ... (getAllCalls peut rester inchangé ou être enrichi pour l'exportation)
+export function getAllCalls() {
+  // Pour l'exportation complète avec les messages associés
+  return db.prepare(`
+    SELECT 
+      c.*, 
+      m.transcript, 
+      m.analysis
+    FROM calls c
+    LEFT JOIN messages m ON c.call_sid = m.call_sid
+    ORDER BY c.created_at DESC
+  `).all();
+}
 
 console.log("✅ Base SQLite initialisée avec succès.");
 
