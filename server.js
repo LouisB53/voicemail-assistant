@@ -161,7 +161,7 @@ async function processVoicemail(payload) {
         }
 
         // --- 6. Analyse du texte via GPT (CLÉ DE L'AMÉLIORATION) ---
-        const { name, motive_legend, motive_details, date_preference, is_urgent, plate_number } = await extractInfoGPT(transcript);
+        const { name, motive_details, date_preference, is_urgent, plate_number } = await extractInfoGPT(transcript);
 
         // --- 7. Construction et Envoi d’Email ---
         const fromPhone = normalizePhone(From);
@@ -169,12 +169,11 @@ async function processVoicemail(payload) {
         const tagLine = [priorityTag].filter(Boolean).join(" ");
 
         // Utilisation de motive_legend dans l'objet et motive_details dans l'en-tête
-        const subject = `📞 [${motive_legend.toUpperCase()}] ${name} (${fromPhone}) - ${date_preference} ${tagLine ? "· " + tagLine : ""}`;
+        const subject = `📞 [${motive_details.toUpperCase()}] ${name} (${fromPhone}) - ${date_preference} ${tagLine ? "· " + tagLine : ""}`;
 
         const summaryLines = [
             tagLine && `**${tagLine}**`,
-            `**Motif principal :** ${motive_legend}`, // Le motif catégorisé
-            `**Détail du besoin :** ${motive_details}`, // Le résumé précis
+            `**Motif :** ${motive_details}`, // Le motif catégorisé
             `**Date souhaitée :** ${date_preference}`,
             `**Appelant :** ${name} (${fromPhone})`,
             plate_number && `**Immatriculation :** ${plate_number}`,
@@ -222,7 +221,7 @@ async function processVoicemail(payload) {
             from_number: From,
             transcript: transcript,
             // Sauvegarde des deux motifs dans l'analyse JSON
-            analysis: JSON.stringify({ name, motive_legend, motive_details, date_preference, is_urgent, plate_number }),
+            analysis: JSON.stringify({ name, motive_details, date_preference, is_urgent, plate_number }),
             sent_at: new Date().toISOString()
         });
 
