@@ -21,7 +21,7 @@ export async function extractInfoGPT(transcript) {
         'récupération véhicule', 'suivi / état des réparations', 
         'demande de devis / facturation', 'prise de rendez-vous', 
         'modification / annulation de RDV', 'demande d’information', 
-        'réservation parking'
+        'réservation parking', "test de Louis Becker"
     ];
 
     // Le Fallback par défaut à utiliser en cas d'échec
