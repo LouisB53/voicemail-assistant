@@ -1,4 +1,5 @@
-// db.js
+// db.js (CORRIGÉ et SYNCHRONISÉ avec server.js)
+
 import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
@@ -31,15 +32,15 @@ CREATE TABLE IF NOT EXISTS calls (
 
 CREATE TABLE IF NOT EXISTS messages (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  call_id INTEGER,
-  recording_url TEXT,
-  transcription TEXT,
-  motif TEXT,
-  nom_detecte TEXT,
-  fidelity TEXT,
-  confidence REAL,
-  created_at TEXT DEFAULT (datetime('now')),
-  FOREIGN KEY(call_id) REFERENCES calls(id)
+  call_sid TEXT, -- 💡 CORRECTION 1 : Le CallSid de Twilio est du TEXTE, pas un INTEGER.
+  garage_id TEXT,    -- Ajouté: Clé du garage pour lier l'appel/message
+  from_number TEXT,  -- Ajouté: Numéro de l'appelant
+  transcript TEXT,
+  analysis TEXT,     -- 💡 MODIFICATION 2 : Stocke le JSON complet de l'analyse GPT
+  sent_at TEXT,      -- Ajouté: Horodatage de l'envoi de l'email
+  created_at TEXT DEFAULT (datetime('now'))
+  -- Suppression des anciennes colonnes (recording_url, motif, nom_detecte, fidelity, confidence)
+  -- La FOREIGN KEY n'est pas nécessaire ici si l'on ne référence pas calls(id)
 );
 `);
 
@@ -53,16 +54,15 @@ export function saveCall(callData) {
 }
 
 export function saveMessage(messageData) {
+  // 💡 Requête mise à jour pour correspondre aux clés envoyées par server.js
   const stmt = db.prepare(`
-    INSERT INTO messages (call_id, recording_url, transcription, motif, nom_detecte, fidelity, confidence)
-    VALUES (@call_id, @recording_url, @transcription, @motif, @nom_detecte, @fidelity, @confidence)
+    INSERT INTO messages (call_sid, garage_id, from_number, transcript, analysis, sent_at)
+    VALUES (@call_sid, @garage_id, @from_number, @transcript, @analysis, @sent_at)
   `);
   stmt.run(messageData);
 }
 
-export function getAllCalls() {
-  return db.prepare("SELECT * FROM calls ORDER BY created_at DESC").all();
-}
+// ... (getAllCalls peut rester inchangé ou être enrichi pour l'exportation)
 
 console.log("✅ Base SQLite initialisée avec succès.");
 
