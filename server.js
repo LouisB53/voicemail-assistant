@@ -118,7 +118,8 @@ async function processVoicemail(payload) {
 
     let transcript = "(transcription indisponible)";
     let name = "(non spécifié)";
-    let motive = "(à déterminer)";
+    let motive_legend = "(pas catégorisé)"; // 💡 MODIFICATION: Nouvelle variable pour la catégorie stricte
+    let motive_details = "(à déterminer)"; // 💡 MODIFICATION: Variable pour le détail concis
     let date_preference = "Indéterminée";
     let is_urgent = false;
     let plate_number = null;
@@ -161,7 +162,15 @@ async function processVoicemail(payload) {
         }
 
         // --- 6. Analyse du texte via GPT (CLÉ DE L'AMÉLIORATION) ---
-        const { name, motive_details, date_preference, is_urgent, plate_number } = await extractInfoGPT(transcript);
+        // On récupère l'objet complet d'analyse GPT
+        const gptAnalysis = await extractInfoGPT(transcript);
+        
+        name = gptAnalysis.name;
+        motive_legend = gptAnalysis.motive_legend; // 💡 MODIFICATION: Assignation de la catégorie stricte
+        motive_details = gptAnalysis.motive_details; // 💡 MODIFICATION: Assignation du détail
+        date_preference = gptAnalysis.date_preference;
+        is_urgent = gptAnalysis.is_urgent;
+        plate_number = gptAnalysis.plate_number;
 
         // --- 7. Construction et Envoi d’Email ---
         const fromPhone = normalizePhone(From);
@@ -169,11 +178,13 @@ async function processVoicemail(payload) {
         const tagLine = [priorityTag].filter(Boolean).join(" ");
 
         // Utilisation de motive_legend dans l'objet et motive_details dans l'en-tête
-        const subject = `📞 [${motive_details.toUpperCase()}] ${name} (${fromPhone}) - ${date_preference} ${tagLine ? "· " + tagLine : ""}`;
+        // 💡 MODIFICATION: Utilisation de motive_legend dans le sujet pour la catégorisation stricte
+        const subject = `📞 [${motive_legend.toUpperCase()}] ${name} (${fromPhone}) - ${date_preference} ${tagLine ? "· " + tagLine : ""}`;
 
         const summaryLines = [
-            tagLine && `**${tagLine}**`,
-            `**Motif :** ${motive_details}`, // Le motif catégorisé
+            priorityTag && `**${priorityTag}**`, // Affiche l'urgence si nécessaire
+            `**Catégorie :** ${motive_legend}`, // 💡 MODIFICATION: Afficher la catégorie stricte
+            `**Motif détaillé :** ${motive_details}`, // Afficher les détails concis
             `**Date souhaitée :** ${date_preference}`,
             `**Appelant :** ${name} (${fromPhone})`,
             plate_number && `**Immatriculation :** ${plate_number}`,
@@ -186,6 +197,11 @@ async function processVoicemail(payload) {
                 ${summaryLines.map(l => {
                     if (l === "—") return '<hr style="border:none;border-top:1px solid #ddd;margin:12px 0;">';
                     const clean = escapeHtml(l.replace(/\*\*/g, ''));
+                    // Logique pour mettre en gras le titre de chaque ligne (ex: "Catégorie :")
+                    const match = clean.match(/^([^:]+):\s*(.*)/);
+                    if (match) {
+                        return `<p style="margin:0 0 4px 0;"><strong>${match[1]}:</strong> ${match[2]}</p>`;
+                    }
                     return `<p style="margin:0 0 4px 0;"><strong>${clean}</strong></p>`;
                 }).join('')}
                 <p style="margin:14px 0 4px 0;"><strong>Transcription :</strong></p>
@@ -220,8 +236,8 @@ async function processVoicemail(payload) {
             garage_id: garage.name,
             from_number: From,
             transcript: transcript,
-            // Sauvegarde des deux motifs dans l'analyse JSON
-            analysis: JSON.stringify({ name, motive_details, date_preference, is_urgent, plate_number }),
+            // 💡 MODIFICATION: Sauvegarde de l'objet gptAnalysis complet et mis à jour
+            analysis: JSON.stringify(gptAnalysis),
             sent_at: new Date().toISOString()
         });
 
