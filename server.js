@@ -109,7 +109,6 @@ async function processVoicemail(payload) {
             subject: `📞 Appel manqué sans message de ${From}`,
             html: `
                 <p><strong>Appelant :</strong> ${From}</p>
-                <p><strong>Numéro Twilio :</strong> ${To}</p>
                 <p>Aucun message n’a été laissé (ou message vide).</p>
             `
         });
