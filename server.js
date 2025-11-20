@@ -263,6 +263,42 @@ app.post("/email-voicemail", async (req, res) => {
     // Vous pouvez garder cette ligne pour le debug
     console.log("📩 Corps Twilio reçu et décodé :", payload); 
 
+        // --- 🔥 FILTRE PAYS ET ENREGISTREMENT DB APPELS BLOQUÉS ---
+    const callerCountry = payload.CallerCountry || payload.FromCountry || null;
+    const fromNumber = payload.From || payload.Caller || "inconnu";
+    const toNumber = payload.To || "inconnu";
+    const callSid = payload.CallSid || `blocked-${Date.now()}`;
+
+    // Si pas FR → on bloque et on stocke en BDD comme "appel d'un autre pays"
+    if (callerCountry && callerCountry !== "FR") {
+
+        console.warn(`🚫 Appel bloqué (pays = ${callerCountry}) depuis ${fromNumber}`);
+
+        // 🔄 Récupération du garage (même logique que partout ailleurs)
+        let cleanTo = (toNumber || "").trim().replace(/\s+/g, "");
+        if (!cleanTo.startsWith("+")) cleanTo = "+" + cleanTo;
+        const garage = GARAGES[cleanTo];
+
+        if (garage) {
+            // 🔥 Sauvegarde BDD sans changer la structure
+            saveCall({
+                call_sid: callSid,
+                from_number: fromNumber,
+                to_number: toNumber,
+                start_time: new Date().toISOString(),
+                end_time: new Date().toISOString(),
+                duration: 0,
+                status: `blocked_${callerCountry}`,   // ⚠️ NE CHANGE PAS LA STRUCTURE
+                has_message: 0,
+                garage_id: garage.name
+            });
+        }
+
+        // ➜ On répond à Twilio et on stoppe ici
+        res.type('text/xml');
+        return res.send('<Response><Hangup/></Response>');
+    }
+
     // 🚨 CLÉ DE LA ROBUSTESSE : Réponse IMMÉDIATE à Twilio avec TwiML de Raccrochage
     // Twilio attend un TwiML (XML) en réponse à l'action Record.
     res.type('text/xml');
