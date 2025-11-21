@@ -386,6 +386,37 @@ app.post("/missed-call-email", async (req, res) => {
 
     const payload = req.body;
     const { CallSid, CallStatus, From, To } = payload;
+
+    // --- 🔥 FILTRE PAYS POUR LES APPELS SANS MESSAGE (SPAM) ---
+    const callerCountry = payload.CallerCountry || payload.FromCountry || null;
+
+    if (callerCountry && callerCountry !== "FR") {
+        console.warn(`🚫 [Missed-Call] Appel étranger bloqué (${callerCountry}) depuis ${From}`);
+
+        // Trouver le garage associé au numéro Twilio
+        let cleanTo = (To || "").trim().replace(/\s+/g, "");
+        if (!cleanTo.startsWith("+")) cleanTo = "+" + cleanTo;
+        const garage = GARAGES[cleanTo];
+
+        if (garage) {
+            // 🔥 On logue l'appel dans la BDD avec la structure existante
+            saveCall({
+                call_sid: CallSid || `blocked-missed-${Date.now()}`,
+                from_number: From,
+                to_number: To,
+                start_time: new Date().toISOString(),
+                end_time: new Date().toISOString(),
+                duration: 0,
+                status: `blocked_${callerCountry}`, // ⚠️ On n'ajoute aucun champ
+                has_message: 0,
+                garage_id: garage.name
+            });
+        }
+
+        // On arrête ici → pas d'email, pas de traitement
+        return;
+    }
+
     
     // Nous ne traitons que les statuts de fin d'appel
     if (!['completed', 'no-answer', 'busy', 'failed'].includes(CallStatus)) {
