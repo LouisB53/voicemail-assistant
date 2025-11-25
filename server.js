@@ -102,20 +102,7 @@ async function processVoicemail(payload) {
         }
     }
 
-    // --- 2. Sauvegarder l’appel ---
-    saveCall({
-        call_sid: callUniqueId,
-        from_number: From,
-        to_number: To,
-        start_time: new Date().toISOString(),
-        end_time: new Date().toISOString(),
-        duration: durationSeconds, // Utilise la durée convertie
-        status: CallStatus || "processed",
-        has_message: RecordingSid ? 1 : 0,
-        garage_id: garage.name || "garage_inconnu"
-    });
-
-    // --- 3. Gestion des Appels Manqués (si pas d'enregistrement valide) ---
+    // --- 2. Gestion des Appels Manqués (si pas d'enregistrement valide) ---
     const hasValidRecording = RecordingSid && durationSeconds > 3;
 
     if (!hasValidRecording) {
@@ -161,7 +148,7 @@ async function processVoicemail(payload) {
     let plate_number = null;
 
     try {
-        // --- 4. Télécharger l’audio ---
+        // --- 3. Télécharger l’audio ---
         const recordingUrl = `https://api.twilio.com/2010-04-01/Accounts/${process.env.ACCOUNT_SID}/Recordings/${RecordingSid}.mp3`;
         const audioRes = await axios.get(recordingUrl, {
             responseType: "arraybuffer",
@@ -171,7 +158,7 @@ async function processVoicemail(payload) {
         const audioBuffer = Buffer.from(audioRes.data);
         console.log(`✅ Téléchargement audio réussi: ${RecordingSid}`);
         
-        // --- 5. Transcription via Whisper (Réactivation de l'API OpenAI) ---
+        // --- 4. Transcription via Whisper (Réactivation de l'API OpenAI) ---
         try {
             const OpenAI = (await import('openai')).default;
             const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -197,7 +184,7 @@ async function processVoicemail(payload) {
             console.error("❌ Erreur Whisper:", e.message);
         }
 
-        // --- 6. Analyse du texte via GPT (CLÉ DE L'AMÉLIORATION) ---
+        // --- 5. Analyse du texte via GPT (CLÉ DE L'AMÉLIORATION) ---
         // On récupère l'objet complet d'analyse GPT
         const gptAnalysis = await extractInfoGPT(transcript);
         
@@ -208,7 +195,7 @@ async function processVoicemail(payload) {
         is_urgent = gptAnalysis.is_urgent;
         plate_number = gptAnalysis.plate_number;
 
-        // --- 7. Construction et Envoi d’Email ---
+        // --- 6. Construction et Envoi d’Email ---
         const fromPhone = normalizePhone(From);
         const priorityTag = is_urgent ? "🚨 URGENT" : "";
         const tagLine = [priorityTag].filter(Boolean).join(" ");
@@ -283,6 +270,19 @@ async function processVoicemail(payload) {
 
         console.log(`✅ Email envoyé à ${garage.to_email}`);
         
+        // --- 7. Sauvegarder l’appel ---
+        saveCall({
+            call_sid: callUniqueId,
+            from_number: From,
+            to_number: To,
+            start_time: new Date().toISOString(),
+            end_time: new Date().toISOString(),
+            duration: durationSeconds, // Utilise la durée convertie
+            status: CallStatus || "processed",
+            has_message: RecordingSid ? 1 : 0,
+            garage_id: garage.name || "garage_inconnu"
+        });
+
         // --- 8. Sauvegarder en BDD ---
         // 🚨 BRIQUE MANQUANTE AJOUTÉE ICI 🚨
         saveMessage({
@@ -501,19 +501,6 @@ app.post("/missed-call-email", async (req, res) => {
         // Si aucun enregistrement n'est trouvé, c'est un vrai appel manqué sans message.
         console.log(`📭 [Status Update] Appel manqué sans message (raccrochage précoce) détecté pour ${CallSid}. Envoi email.`);
 
-        // 👉 AJOUT ICI : Sauvegarder l’appel manqué en DB
-        saveCall({
-            call_sid: CallSid,
-            from_number: From,
-            to_number: To,
-            start_time: new Date().toISOString(),
-            end_time: new Date().toISOString(),
-            duration: 0,
-            status: "missed",
-            has_message: 0,
-            garage_id: garage.name
-        });
-
         // --- 🔍 Historique des appels récents (7 jours) ---
         const history = getRecentCalls(From, garage.name)
 
@@ -542,6 +529,19 @@ app.post("/missed-call-email", async (req, res) => {
                 <p>Aucun message n’a été laissé.</p>
                 ${historyHtml}
             `
+        });
+
+        // 👉 AJOUT ICI : Sauvegarder l’appel manqué en DB
+        saveCall({
+            call_sid: CallSid,
+            from_number: From,
+            to_number: To,
+            start_time: new Date().toISOString(),
+            end_time: new Date().toISOString(),
+            duration: 0,
+            status: "missed",
+            has_message: 0,
+            garage_id: garage.name
         });
 
     } catch (err) {
