@@ -8,8 +8,9 @@ import fs from "fs";
 import dotenv from "dotenv";
 // Import de l'extracteur GPT et des utilitaires nécessaires
 import { extractInfoGPT } from "./utils/gpt-extractor.js"; 
-import { saveCall, saveMessage, getAllCalls } from "./db.js"; // Assurez-vous que la BDD est accessible
+import { saveCall, saveMessage, getAllCalls, getRecentCalls } from "./db.js"; // Assurez-vous que la BDD est accessible
 import { escapeHtml, normalizePhone } from "./utils/extractors.js";
+import { DateTime } from "luxon";
 import Twilio from "twilio"; // Ajout de Twilio pour la gestion API
 
 dotenv.config();
@@ -49,6 +50,23 @@ if (configString) {
 
 // Configurer SendGrid
 sgMail.setApiKey(process.env.SENDGRID_API_SECRET);
+
+// Bonne heure locale pour les timestamps
+function toParisTime(rawDate) {
+    if (!rawDate) return "date inconnue";
+
+    // SQLite renvoie du "YYYY-MM-DD HH:mm:ss" (datetime('now'))
+    const dt = DateTime.fromSQL(rawDate, { zone: "utc" });
+
+    if (!dt.isValid) {
+        console.error("❌ DateTime invalide pour l'historique:", rawDate, dt.invalidReason);
+        return rawDate; // fallback brut, au moins tu vois quelque chose
+    }
+
+    return dt
+        .setZone("Europe/Paris")
+        .toFormat("dd/MM - HH:mm");
+}
 
 // --- FIN DU BLOC MODIFIÉ ---
 
@@ -102,6 +120,24 @@ async function processVoicemail(payload) {
 
     if (!hasValidRecording) {
         console.log("📭 Appel Manqué / Silence détecté – envoi mail d’appel manqué");
+        
+        // ✔️ Historique des appels de cet appelant
+        const history = getRecentCalls(From, garage.name)
+
+        let historyHtml = "";
+        if (history.length >= 1) {
+            historyHtml = `
+                <p><strong>📎 Historique récent des appels de cet appelant :</strong></p>
+                <ul>
+                    ${history.map(h => {
+                        const type = h.has_message ? "avec message" : "sans message";
+                        return `<li>${toParisTime(h.created_at)} — ${type}</li>`;
+                    }).join("")}
+                </ul>
+                <hr>
+            `;
+        }
+        
         await sgMail.send({
             to: garage.to_email,
             bcc: BCC_MONITOR,
@@ -110,6 +146,7 @@ async function processVoicemail(payload) {
             html: `
                 <p><strong>Appelant :</strong> ${From}</p>
                 <p>Aucun message n’a été laissé (ou message vide).</p>
+                ${historyHtml}
             `
         });
         return; 
@@ -191,6 +228,23 @@ async function processVoicemail(payload) {
             `Rappel rapide recommandé.`,
         ].filter(Boolean);
 
+        // --- 🔍 Historique des appels récents (7 jours) ---
+        const history = getRecentCalls(From, garage.name)
+
+        let historyHtml = "";
+        if (history.length >= 1) {
+            historyHtml = `
+                <p><strong>📎 Historique récent des appels de cet appelant :</strong></p>
+                <ul>
+                    ${history.map(h => {
+                        const type = h.has_message ? "avec message" : "sans message";
+                        return `<li>${toParisTime(h.created_at)} — ${type}</li>`;
+                    }).join("")}
+                </ul>
+                <hr>
+            `;
+        }
+
         const html = `
             <div style="font-family: Arial, sans-serif; line-height:1.6; color:#222; font-size:15px; max-width:600px;">
                 ${summaryLines.map(l => {
@@ -207,6 +261,7 @@ async function processVoicemail(payload) {
                 <p style="margin:0; padding-left:10px; border-left:3px solid #ccc;">
                     ${escapeHtml(transcript).replace(/\n+/g, '<br>').replace(/([.?!])\s/g, '$1&nbsp;')}
                 </p>
+                ${historyHtml}
             </div>
         `;
 
@@ -445,7 +500,37 @@ app.post("/missed-call-email", async (req, res) => {
         
         // Si aucun enregistrement n'est trouvé, c'est un vrai appel manqué sans message.
         console.log(`📭 [Status Update] Appel manqué sans message (raccrochage précoce) détecté pour ${CallSid}. Envoi email.`);
-        
+
+        // 👉 AJOUT ICI : Sauvegarder l’appel manqué en DB
+        saveCall({
+            call_sid: CallSid,
+            from_number: From,
+            to_number: To,
+            start_time: new Date().toISOString(),
+            end_time: new Date().toISOString(),
+            duration: 0,
+            status: "missed",
+            has_message: 0,
+            garage_id: garage.name
+        });
+
+        // --- 🔍 Historique des appels récents (7 jours) ---
+        const history = getRecentCalls(From, garage.name)
+
+        let historyHtml = "";
+        if (history.length >= 1) {
+            historyHtml = `
+                <p><strong>📎 Historique récent des appels de cet appelant :</strong></p>
+                <ul>
+                    ${history.map(h => {
+                        const type = h.has_message ? "avec message" : "sans message";
+                        return `<li>${toParisTime(h.created_at)} — ${type}</li>`;
+                    }).join("")}
+                </ul>
+                <hr>
+            `;
+        }
+
         // Envoi de l'email d'appel manqué
         await sgMail.send({
             to: garage.to_email,
@@ -455,6 +540,7 @@ app.post("/missed-call-email", async (req, res) => {
             html: `
                 <p><strong>Appelant :</strong> ${From}</p>
                 <p>Aucun message n’a été laissé.</p>
+                ${historyHtml}
             `
         });
 

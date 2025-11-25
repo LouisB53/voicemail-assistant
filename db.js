@@ -75,6 +75,18 @@ export function getAllCalls() {
   `).all();
 }
 
+export function getRecentCalls(fromNumber, garageId) {
+  return db.prepare(`
+    SELECT created_at, has_message
+    FROM calls
+    WHERE from_number = ?
+      AND garage_id = ?
+      AND status NOT LIKE 'blocked%'
+      AND created_at > datetime('now', '-7 days')
+    ORDER BY created_at DESC
+  `).all(fromNumber, garageId);
+}
+
 console.log("✅ Base SQLite initialisée avec succès.");
 
 export default db;
