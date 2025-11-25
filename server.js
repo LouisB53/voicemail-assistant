@@ -127,7 +127,7 @@ async function processVoicemail(payload) {
         let historyHtml = "";
         if (history.length >= 1) {
             historyHtml = `
-                <p><strong>📎 Historique récent des appels de cet appelant :</strong></p>
+                <p><strong>Historique récent des appels de cet appelant :</strong></p>
                 <ul>
                     ${history.map(h => {
                         const type = h.has_message ? "avec message" : "sans message";
@@ -234,7 +234,7 @@ async function processVoicemail(payload) {
         let historyHtml = "";
         if (history.length >= 1) {
             historyHtml = `
-                <p><strong>📎 Historique récent des appels de cet appelant :</strong></p>
+                <p><strong>Historique récent des appels de cet appelant :</strong></p>
                 <ul>
                     ${history.map(h => {
                         const type = h.has_message ? "avec message" : "sans message";
@@ -520,7 +520,7 @@ app.post("/missed-call-email", async (req, res) => {
         let historyHtml = "";
         if (history.length >= 1) {
             historyHtml = `
-                <p><strong>📎 Historique récent des appels de cet appelant :</strong></p>
+                <p><strong>Historique récent des appels de cet appelant :</strong></p>
                 <ul>
                     ${history.map(h => {
                         const type = h.has_message ? "avec message" : "sans message";
