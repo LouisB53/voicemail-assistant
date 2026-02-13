@@ -36,6 +36,7 @@
     "form-data": "^4.0.4",
     "luxon": "^3.7.2",
     "openai": "^6.8.1",
+    "puppeteer": "^23.11.1",
     "twilio": "^5.10.4"
   },
   "engines": {
