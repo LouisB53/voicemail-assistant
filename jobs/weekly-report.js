@@ -43,10 +43,12 @@ if (configString) {
   GARAGES = JSON.parse(fs.readFileSync(join(__dirname, '..', 'garages.json'), 'utf-8'));
 }
 
-// Créer un mapping garage_name → to_email depuis la config
+// Créer un mapping garage_name → to_email / from_email depuis la config
 const GARAGE_EMAILS = {};
+const GARAGE_FROM_EMAILS = {};
 Object.values(GARAGES).forEach(garage => {
   GARAGE_EMAILS[garage.name] = garage.to_email;
+  GARAGE_FROM_EMAILS[garage.name] = garage.from_email;
 });
 
 console.log('📧 Emails configurés pour:', Object.keys(GARAGE_EMAILS).join(', '));
@@ -424,7 +426,7 @@ async function generatePDF(htmlContent, outputPath) {
 /**
  * Envoyer le rapport par email avec PDF en pièce jointe
  */
-async function sendReport(garageName, clientEmail, pdfPath, periodName, kpis) {
+async function sendReport(garageName, clientEmail, fromEmail, pdfPath, periodName, kpis) {
   // Lire le PDF
   const pdfContent = readFileSync(pdfPath);
   const pdfBase64 = pdfContent.toString('base64');
@@ -436,10 +438,7 @@ async function sendReport(garageName, clientEmail, pdfPath, periodName, kpis) {
 
   const msg = {
     to: clientEmail,
-    from: {
-      email: FROM_EMAIL,
-      name: FROM_NAME,
-    },
+    from: fromEmail,
     subject: `📊 Rapport Hebdomadaire - ${garageName} - ${periodName}`,
     text: `Bonsoir,
 
@@ -557,9 +556,9 @@ async function generateAndSendWeeklyReports() {
 
     // Vérifier si on a un email configuré pour ce garage
     const clientEmail = GARAGE_EMAILS[garageId];
-    if (!clientEmail || clientEmail === 'client@example.com') {
+    const fromEmail = GARAGE_FROM_EMAILS[garageId];
+    if (!clientEmail || !fromEmail) {
       console.log(`⚠️  Pas d'email configuré pour ${garageId}`);
-      console.log('   Ajoutez l\'email dans GARAGE_EMAILS ou comme variable d\'environnement');
       totalFailed++;
       continue;
     }
@@ -596,7 +595,7 @@ async function generateAndSendWeeklyReports() {
 
     // Envoyer l'email avec le PDF
     console.log(`📧 Envoi du rapport à ${clientEmail}...`);
-    const result = await sendReport(garageId, clientEmail, pdfPath, periodName, kpis);
+    const result = await sendReport(garageId, clientEmail, fromEmail, pdfPath, periodName, kpis);
 
     if (result.success) {
       console.log(`✅ Rapport envoyé avec succès`);
