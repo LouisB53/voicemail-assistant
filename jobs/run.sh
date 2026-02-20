@@ -24,17 +24,6 @@ if [ ! -f "jobs/weekly-report.js" ]; then
     exit 1
 fi
 
-# Installer Chrome pour Puppeteer si absent (persiste dans /home)
-CHROME_CACHE="/home/site/wwwroot/.cache/puppeteer"
-if [ ! -d "$CHROME_CACHE" ]; then
-    echo "🔽 Chrome non trouvé, installation en cours..."
-    export PATH="/node_modules/.bin:$PATH"
-    node /node_modules/puppeteer/install.mjs 2>/dev/null || npx puppeteer browsers install chrome
-    echo "✅ Chrome installé (ou tentative effectuée)"
-else
-    echo "✅ Chrome déjà présent dans $CHROME_CACHE"
-fi
-
 # Exécuter le script de génération de rapports
 echo ""
 echo "Exécution du script de génération de rapports..."

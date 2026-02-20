@@ -15,8 +15,8 @@ import sgMail from '@sendgrid/mail';
 import { DateTime } from 'luxon';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import puppeteer from 'puppeteer';
-import { readFileSync, unlinkSync, mkdirSync } from 'fs';
+import PDFDocument from 'pdfkit';
+import { readFileSync, unlinkSync, mkdirSync, createWriteStream } from 'fs';
 import fs from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -132,6 +132,7 @@ function getKPIsForPeriod(db, garageId, startDate, endDate) {
 }
 
 /**
+ * @deprecated Remplacé par generatePDF via PDFKit
  * Générer le HTML du rapport
  */
 function generateReportHTML(kpis, garageName, periodName, startDate, endDate) {
@@ -380,47 +381,124 @@ function generateReportHTML(kpis, garageName, periodName, startDate, endDate) {
 }
 
 /**
- * Générer un PDF à partir du HTML
+ * Générer un PDF avec PDFKit (pur Node.js, sans Chrome)
  */
-async function generatePDF(htmlContent, outputPath) {
-  let browser;
-  try {
-    console.log('   Lancement de Puppeteer...');
-    browser = await puppeteer.launch({
-      headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-      ],
-    });
+async function generatePDF(kpis, garageName, periodName, startDate, endDate, outputPath) {
+  return new Promise((resolve, reject) => {
+    try {
+      const doc = new PDFDocument({ size: 'A4', margin: 0 });
+      const stream = createWriteStream(outputPath);
 
-    const page = await browser.newPage();
-    await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
+      doc.on('error', reject);
+      stream.on('error', reject);
+      stream.on('finish', () => resolve({ success: true }));
 
-    await page.pdf({
-      path: outputPath,
-      format: 'A4',
-      printBackground: true,
-      margin: {
-        top: '0',
-        right: '0',
-        bottom: '0',
-        left: '0',
-      },
-    });
+      doc.pipe(stream);
 
-    console.log('   ✅ PDF généré');
-    return { success: true };
-  } catch (error) {
-    console.error('   ❌ Erreur génération PDF:', error.message);
-    return { success: false, error: error.message };
-  } finally {
-    if (browser) {
-      await browser.close();
+      const PURPLE      = '#667eea';
+      const PURPLE_DARK = '#764ba2';
+      const PURPLE_SOFT = '#8b9ff4';
+      const WHITE       = '#ffffff';
+      const DARK        = '#2d3748';
+      const GRAY        = '#718096';
+      const LIGHT_BG    = '#f7fafc';
+
+      const W  = doc.page.width;   // 595.28
+      const M  = 40;               // marge
+      const CW = W - M * 2;        // largeur contenu
+
+      // HEADER
+      doc.rect(0, 0, W, 170).fill(PURPLE);
+
+      doc.fillColor(WHITE).font('Helvetica-Bold').fontSize(26)
+         .text('Rapport Hebdomadaire', M, 40, { width: CW, align: 'center' });
+
+      doc.font('Helvetica').fontSize(16)
+         .text(garageName, M, 80, { width: CW, align: 'center' });
+
+      const bW = 220, bH = 26, bX = (W - 220) / 2;
+      doc.rect(bX, 117, bW, bH).fill(PURPLE_SOFT);
+      doc.fillColor(WHITE).font('Helvetica').fontSize(10)
+         .text(`Periode : ${periodName}`, bX, 124, { width: bW, align: 'center' });
+
+      // KPI CARDS
+      const cardTop = 195;
+      const cardH   = 90;
+      const gap     = 10;
+      const cardW   = (CW - gap * 3) / 4;
+
+      const kpiItems = [
+        { label: 'APPELS MANQUES',    value: kpis.appels_manques },
+        { label: 'MESSAGES LAISSES',  value: kpis.messages_laisses },
+        { label: 'TAUX AVEC MESSAGE', value: `${kpis.taux_message}%` },
+        { label: 'APPELANTS UNIQUES', value: kpis.appelants_uniques },
+      ];
+
+      kpiItems.forEach((item, i) => {
+        const x = M + i * (cardW + gap);
+        doc.rect(x, cardTop, cardW, cardH).fill(PURPLE);
+        doc.fillColor(WHITE).font('Helvetica-Bold').fontSize(28)
+           .text(String(item.value), x, cardTop + 16, { width: cardW, align: 'center' });
+        doc.font('Helvetica').fontSize(7)
+           .text(item.label, x, cardTop + 58, { width: cardW, align: 'center' });
+      });
+
+      // MOTIFS SECTION
+      let y = cardTop + cardH + 30;
+
+      doc.fillColor(DARK).font('Helvetica-Bold').fontSize(14)
+         .text("Motifs d'Appels", M, y);
+      y += 22;
+
+      doc.rect(M, y, CW, 2).fill(PURPLE);
+      y += 14;
+
+      if (kpis.motifs_liste.length > 0) {
+        kpis.motifs_liste.forEach((item, i) => {
+          const rowH = 36;
+          doc.rect(M, y, CW, rowH).fill(i % 2 === 0 ? LIGHT_BG : WHITE);
+
+          // Cercle rang
+          doc.circle(M + 20, y + rowH / 2, 13).fill(PURPLE);
+          doc.fillColor(WHITE).font('Helvetica-Bold').fontSize(10)
+             .text(String(i + 1), M + 14, y + rowH / 2 - 6, { width: 12, align: 'center' });
+
+          // Nom du motif
+          const motifName = item.motif.charAt(0).toUpperCase() + item.motif.slice(1);
+          doc.fillColor(DARK).font('Helvetica').fontSize(11)
+             .text(motifName, M + 42, y + rowH / 2 - 6, { width: CW - 90 });
+
+          // Badge count
+          const cW = 40;
+          doc.rect(M + CW - cW, y + 8, cW, 20).fill(PURPLE_DARK);
+          doc.fillColor(WHITE).font('Helvetica-Bold').fontSize(10)
+             .text(String(item.count), M + CW - cW, y + 13, { width: cW, align: 'center' });
+
+          y += rowH;
+        });
+      } else {
+        doc.rect(M, y, CW, 50).fill(LIGHT_BG);
+        doc.fillColor(GRAY).font('Helvetica').fontSize(11)
+           .text('Aucun message vocal analyse sur cette periode.', M, y + 18, { width: CW, align: 'center' });
+        y += 50;
+      }
+
+      // FOOTER
+      y += 30;
+      doc.rect(0, y, W, 80).fill(LIGHT_BG);
+
+      const now = DateTime.now().setZone('Europe/Paris');
+      doc.fillColor(GRAY).font('Helvetica').fontSize(9)
+         .text(`Rapport genere le ${now.toFormat('dd/MM/yyyy a HH:mm')}`, M, y + 14, { width: CW, align: 'center' });
+      doc.text(`Periode analysee : ${startDate} au ${endDate}`, M, y + 28, { width: CW, align: 'center' });
+      doc.fillColor(DARK).font('Helvetica-Bold').fontSize(9)
+         .text('PitCall - Systeme de gestion des messages vocaux', M, y + 42, { width: CW, align: 'center' });
+
+      doc.end();
+    } catch (error) {
+      reject(error);
     }
-  }
+  });
 }
 
 /**
@@ -577,16 +655,12 @@ async function generateAndSendWeeklyReports() {
       continue;
     }
 
-    // Générer le HTML
-    console.log('📝 Génération du rapport HTML...');
-    const htmlContent = generateReportHTML(kpis, garageId, periodName, startDate, endDate);
-
     // Générer le PDF
     console.log('📄 Génération du PDF...');
     const pdfFilename = `Rapport_${garageId.replace(/\s+/g, '_')}_${now.toFormat('yyyy-MM-dd')}.pdf`;
     const pdfPath = join(tempDir, pdfFilename);
 
-    const pdfResult = await generatePDF(htmlContent, pdfPath);
+    const pdfResult = await generatePDF(kpis, garageId, periodName, startDate, endDate, pdfPath);
     if (!pdfResult.success) {
       console.log(`❌ Échec de génération PDF: ${pdfResult.error}`);
       totalFailed++;
