@@ -25,6 +25,7 @@ logs
 rapports/
 rapport_*.md
 rapport_*.html
+temp_reports/
 
 # IDE
 .vscode/
