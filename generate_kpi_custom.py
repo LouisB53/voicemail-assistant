@@ -5,11 +5,12 @@ Générateur de rapports KPI avec périodes personnalisables
 
 import sqlite3
 import json
+import os
 from datetime import datetime, timedelta
 from collections import Counter
 import sys
 
-DB_PATH = "/Users/louisbecker/Desktop/voicemail-assistant/voicemail.db"
+DB_PATH = os.environ.get("DB_PATH", os.path.join(os.path.dirname(__file__), "voicemail.db"))
 
 
 def get_connection():

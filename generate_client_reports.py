@@ -12,8 +12,8 @@ from datetime import datetime, timedelta
 from collections import Counter
 import os
 
-DB_PATH = "/Users/louisbecker/Desktop/voicemail-assistant/voicemail.db"
-OUTPUT_DIR = "/Users/louisbecker/Desktop/voicemail-assistant/rapports"
+DB_PATH = os.environ.get("DB_PATH", os.path.join(os.path.dirname(__file__), "voicemail.db"))
+OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "rapports")
 
 
 def get_connection():

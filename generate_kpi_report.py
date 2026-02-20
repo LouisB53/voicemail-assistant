@@ -6,11 +6,12 @@ Génère des tableaux propres avec les statistiques de la dernière semaine et d
 
 import sqlite3
 import json
+import os
 from datetime import datetime, timedelta
 from collections import Counter, defaultdict
 import pandas as pd
 
-DB_PATH = "/Users/louisbecker/Desktop/voicemail-assistant/voicemail.db"
+DB_PATH = os.environ.get("DB_PATH", os.path.join(os.path.dirname(__file__), "voicemail.db"))
 
 
 def get_connection():
