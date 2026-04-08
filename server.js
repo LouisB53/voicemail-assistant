@@ -8,7 +8,9 @@ import fs from "fs";
 import dotenv from "dotenv";
 // Import de l'extracteur GPT et des utilitaires nécessaires
 import { extractInfoGPT } from "./utils/gpt-extractor.js"; 
-import { saveCall, saveMessage, getAllCalls, getRecentCalls } from "./db.js"; // Assurez-vous que la BDD est accessible
+import { saveCall, saveMessage, getAllCalls, getRecentCalls, getGarageSettings } from "./db.js";
+import authRouter from "./routes/auth.js";
+import dashboardRouter from "./routes/dashboard.js";
 import { escapeHtml, normalizePhone } from "./utils/extractors.js";
 import { DateTime } from "luxon";
 import Twilio from "twilio"; // Ajout de Twilio pour la gestion API
@@ -26,6 +28,13 @@ const twilioClient = Twilio(process.env.ACCOUNT_SID, process.env.AUTH_TOKEN);
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(express.text({ type: "*/*" }));
+
+// Interface web statique
+app.use(express.static("public"));
+
+// Routes API
+app.use("/api/auth", authRouter);
+app.use("/api", dashboardRouter);
 
 // --- DÉBUT DU BLOC MODIFIÉ POUR LA SÉCURITÉ ET AZURE APP SERVICE ---
 
@@ -412,6 +421,18 @@ app.post("/twiml/voicemail/:to", async (req, res) => {
 
         // 💡 Assurez-vous que cette URL est l'adresse publique de la route ASYNCHRONE !
         const callbackUrl = process.env.PUBLIC_SERVER_URL + "/email-voicemail"; 
+
+        // Vérifier si le garage est fermé
+        const settings = getGarageSettings(garage.name);
+        if (settings.is_closed) {
+          const msg = settings.closed_message || "Le garage est actuellement fermé. Merci de rappeler pendant nos horaires d'ouverture.";
+          return res.type("text/xml").send(`
+            <Response>
+              <Say language="fr-FR" voice="alice">${msg}</Say>
+              <Hangup/>
+            </Response>
+          `);
+        }
 
         res.type("text/xml");
         res.send(`

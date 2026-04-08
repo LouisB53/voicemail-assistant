@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MechaniCall — Tableau de bord</title>
+  <style>
+    :root {
+      --blue: #1d4ed8;
+      --blue-dark: #1e40af;
+      --blue-soft: #dbeafe;
+      --green: #16a34a;
+      --green-soft: #dcfce7;
+      --red: #dc2626;
+      --red-soft: #fef2f2;
+      --orange: #d97706;
+      --orange-soft: #fffbeb;
+      --bg: #f1f5f9;
+      --card: #ffffff;
+      --text: #1e293b;
+      --muted: #64748b;
+      --border: #e2e8f0;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); }
+
+    /* NAV */
+    nav {
+      background: linear-gradient(135deg, #1e3a8a, #1d4ed8);
+      color: white;
+      padding: 0 32px;
+      height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 2px 12px rgba(29,78,216,0.3);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .nav-brand { display: flex; align-items: center; gap: 10px; }
+    .nav-logo { font-size: 22px; font-weight: 800; letter-spacing: -0.5px; }
+    .nav-tagline { font-size: 12px; opacity: 0.7; }
+    .nav-right { display: flex; align-items: center; gap: 14px; }
+    .nav-user { font-size: 13px; font-weight: 600; opacity: 0.9; }
+    .nav-garage { font-size: 11px; opacity: 0.65; }
+    .btn-nav {
+      background: rgba(255,255,255,0.12);
+      border: 1px solid rgba(255,255,255,0.25);
+      color: white;
+      padding: 6px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      transition: background 0.15s;
+    }
+    .btn-nav:hover { background: rgba(255,255,255,0.22); }
+    .btn-logout:hover { background: rgba(220,38,38,0.4); border-color: rgba(255,100,100,0.4); }
+
+    /* LAYOUT */
+    .container { max-width: 1300px; margin: 0 auto; padding: 28px 24px; }
+
+    /* STATUS BANNER */
+    .status-banner {
+      border-radius: 14px;
+      padding: 16px 20px;
+      margin-bottom: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .status-banner.open {
+      background: var(--green-soft);
+      border: 1.5px solid #86efac;
+    }
+    .status-banner.closed {
+      background: var(--orange-soft);
+      border: 1.5px solid #fcd34d;
+    }
+    .status-banner-left { display: flex; align-items: center; gap: 12px; }
+    .status-dot {
+      width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0;
+    }
+    .status-dot.open { background: var(--green); box-shadow: 0 0 0 3px #86efac; }
+    .status-dot.closed { background: var(--orange); box-shadow: 0 0 0 3px #fcd34d; }
+    .status-label { font-size: 15px; font-weight: 700; }
+    .status-label.open { color: var(--green); }
+    .status-label.closed { color: var(--orange); }
+    .status-msg-preview { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .btn-status-toggle {
+      padding: 8px 18px;
+      border-radius: 9px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      border: none;
+      transition: opacity 0.15s;
+    }
+    .btn-status-toggle:hover { opacity: 0.85; }
+    .btn-status-toggle.open { background: var(--orange); color: white; }
+    .btn-status-toggle.closed { background: var(--green); color: white; }
+    .btn-edit-msg {
+      background: transparent;
+      border: 1.5px solid var(--border);
+      color: var(--muted);
+      padding: 7px 13px;
+      border-radius: 8px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: border-color 0.15s;
+    }
+    .btn-edit-msg:hover { border-color: var(--blue); color: var(--blue); }
+
+    /* MODAL */
+    .modal-overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.4);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-overlay.visible { display: flex; }
+    .modal {
+      background: white;
+      border-radius: 18px;
+      padding: 28px;
+      width: 100%;
+      max-width: 480px;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.18);
+    }
+    .modal h3 { font-size: 17px; font-weight: 700; margin-bottom: 16px; }
+    .modal textarea {
+      width: 100%;
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-size: 14px;
+      font-family: inherit;
+      resize: vertical;
+      min-height: 90px;
+      outline: none;
+    }
+    .modal textarea:focus { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-soft); }
+    .modal-hint { font-size: 12px; color: var(--muted); margin-top: 8px; }
+    .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+    .btn-cancel { background: white; border: 1.5px solid var(--border); color: var(--text); padding: 9px 18px; border-radius: 9px; cursor: pointer; font-size: 13px; }
+    .btn-save { background: var(--blue); color: white; border: none; padding: 9px 20px; border-radius: 9px; cursor: pointer; font-size: 13px; font-weight: 700; }
+
+    /* KPI CARDS */
+    .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+    .kpi-card {
+      background: var(--card);
+      border-radius: 16px;
+      padding: 22px 20px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+      border: 1px solid var(--border);
+      position: relative;
+      overflow: hidden;
+    }
+    .kpi-card::after {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 4px;
+    }
+    .kpi-card.blue::after { background: linear-gradient(90deg, #1d4ed8, #3b82f6); }
+    .kpi-card.green::after { background: linear-gradient(90deg, #16a34a, #22c55e); }
+    .kpi-card.red::after { background: linear-gradient(90deg, #dc2626, #ef4444); }
+    .kpi-card.orange::after { background: linear-gradient(90deg, #d97706, #f59e0b); }
+    .kpi-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); margin-bottom: 10px; }
+    .kpi-value { font-size: 36px; font-weight: 800; line-height: 1; }
+    .kpi-value.blue { color: var(--blue); }
+    .kpi-value.green { color: var(--green); }
+    .kpi-value.red { color: var(--red); }
+    .kpi-value.orange { color: var(--orange); }
+    .kpi-sub { font-size: 12px; color: var(--muted); margin-top: 6px; }
+
+    /* TOOLBAR */
+    .section-header { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+    .section-title { font-size: 17px; font-weight: 700; flex: 1; }
+    input[type=text] {
+      padding: 8px 13px;
+      border: 1.5px solid var(--border);
+      border-radius: 9px;
+      font-size: 13px;
+      background: white;
+      color: var(--text);
+      outline: none;
+      width: 240px;
+    }
+    input[type=text]:focus { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-soft); }
+    .filter-toggle { display: flex; gap: 3px; background: var(--border); border-radius: 9px; padding: 3px; }
+    .filter-toggle button {
+      padding: 5px 13px; border: none; background: transparent; border-radius: 7px;
+      cursor: pointer; font-size: 12px; color: var(--muted); transition: all 0.15s; white-space: nowrap;
+    }
+    .filter-toggle button.active { background: white; color: var(--text); font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+
+    /* TABLE */
+    .table-wrap { background: var(--card); border-radius: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.05); border: 1px solid var(--border); overflow: hidden; }
+    table { width: 100%; border-collapse: collapse; }
+    thead tr { background: #f8fafc; border-bottom: 2px solid var(--border); }
+    thead th { padding: 11px 16px; text-align: left; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.7px; color: var(--muted); white-space: nowrap; }
+    tbody tr { border-bottom: 1px solid var(--border); transition: background 0.1s; }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr.data-row:hover { background: #f8fafc; cursor: pointer; }
+    tbody tr.expanded { background: #eff6ff; }
+    td { padding: 13px 16px; font-size: 13px; vertical-align: middle; }
+    .td-date { color: var(--muted); white-space: nowrap; font-size: 12px; }
+    .td-caller-name { font-weight: 600; }
+    .td-phone { font-size: 11px; color: var(--muted); font-weight: 400; }
+
+    /* BADGES */
+    .badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600;
+      white-space: nowrap;
+    }
+    .badge-urgent { background: var(--red-soft); color: var(--red); border: 1px solid #fecaca; }
+    .badge-ok { background: var(--green-soft); color: var(--green); border: 1px solid #86efac; }
+    .badge-missed { background: var(--orange-soft); color: var(--orange); border: 1px solid #fcd34d; }
+    .badge-motif { background: var(--blue-soft); color: var(--blue-dark); border: 1px solid #bfdbfe; }
+    .badge-known { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; font-size: 10px; }
+    .badge-recalled { background: var(--green-soft); color: var(--green); border: 1px solid #86efac; }
+    .badge-to-recall { background: var(--orange-soft); color: var(--orange); border: 1px solid #fcd34d; }
+
+    /* BOUTON RAPPEL */
+    .btn-recall {
+      padding: 5px 12px;
+      border-radius: 7px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: opacity 0.15s;
+      white-space: nowrap;
+    }
+    .btn-recall:hover { opacity: 0.8; }
+    .btn-recall.to-recall { background: var(--orange-soft); color: var(--orange); border: 1.5px solid #fcd34d; }
+    .btn-recall.recalled { background: var(--green-soft); color: var(--green); border: 1.5px solid #86efac; }
+
+    /* EXPAND ROW */
+    .expand-row td { padding: 0; }
+    .expand-content {
+      background: #eff6ff;
+      border-top: 1px solid #bfdbfe;
+      padding: 20px 24px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+    .expand-section h4 { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.7px; color: var(--blue-dark); margin-bottom: 10px; }
+    .expand-transcript {
+      background: white; border-radius: 10px; padding: 14px 16px;
+      font-size: 13px; line-height: 1.75; color: var(--text);
+      border-left: 3px solid var(--blue);
+      grid-column: 1 / -1;
+    }
+    .detail-grid { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 13px; align-items: start; }
+    .detail-key { color: var(--muted); font-weight: 500; white-space: nowrap; }
+    .detail-val { color: var(--text); font-weight: 600; }
+    .detail-val.urgent { color: var(--red); }
+    .detail-val.known { color: var(--green); font-size: 12px; font-weight: 500; }
+    .recall-info { font-size: 11px; color: var(--green); margin-top: 6px; }
+
+    /* MOTIF CHART */
+    .bottom-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 24px; margin-top: 24px; }
+    .motif-card { background: var(--card); border-radius: 16px; padding: 20px 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.05); border: 1px solid var(--border); }
+    .motif-card h3 { font-size: 14px; font-weight: 700; margin-bottom: 16px; }
+    .motif-bar-item { margin-bottom: 10px; }
+    .motif-bar-label { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; }
+    .motif-bar-label span:first-child { color: var(--text); font-weight: 500; }
+    .motif-bar-label span:last-child { color: var(--muted); }
+    .motif-bar-track { background: var(--border); border-radius: 4px; height: 6px; }
+    .motif-bar-fill { background: linear-gradient(90deg, var(--blue), #3b82f6); border-radius: 4px; height: 6px; transition: width 0.6s ease; }
+
+    /* EMPTY */
+    .empty { text-align: center; padding: 60px 20px; color: var(--muted); }
+    .empty .icon { font-size: 36px; margin-bottom: 10px; }
+
+    @media (max-width: 960px) {
+      .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+      .bottom-grid { grid-template-columns: 1fr; }
+      .expand-content { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-brand">
+    <div>
+      <div class="nav-logo">🔔 MechaniCall</div>
+      <div class="nav-tagline">Espace garagiste</div>
+    </div>
+  </div>
+  <div class="nav-right">
+    <div>
+      <div class="nav-user" id="nav-user-name">—</div>
+      <div class="nav-garage" id="nav-garage-id">—</div>
+    </div>
+    <button class="btn-nav" onclick="loadData()">↻ Actualiser</button>
+    <button class="btn-nav btn-logout" onclick="logout()">Déconnexion</button>
+  </div>
+</nav>
+
+<!-- Modal message de fermeture -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal">
+    <h3>Message de fermeture</h3>
+    <textarea id="modal-msg" rows="3" placeholder="Ex : Le garage est fermé pour congés du 1er au 15 août. Nous reprenons le 16."></textarea>
+    <p class="modal-hint">Ce message sera lu automatiquement aux appelants tant que le garage est marqué comme fermé.</p>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal()">Annuler</button>
+      <button class="btn-save" onclick="saveMessage()">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- BANNIÈRE STATUT GARAGE -->
+  <div class="status-banner open" id="status-banner">
+    <div class="status-banner-left">
+      <div class="status-dot open" id="status-dot"></div>
+      <div>
+        <div class="status-label open" id="status-label">Garage ouvert</div>
+        <div class="status-msg-preview" id="status-msg-preview"></div>
+      </div>
+    </div>
+    <div style="display:flex; gap:10px; align-items:center;">
+      <button class="btn-edit-msg" onclick="openModal()">✏️ Modifier le message</button>
+      <button class="btn-status-toggle open" id="btn-toggle-status" onclick="toggleStatus()">Marquer comme fermé</button>
+    </div>
+  </div>
+
+  <!-- KPI -->
+  <div class="kpi-grid">
+    <div class="kpi-card blue">
+      <div class="kpi-label">Appels reçus</div>
+      <div class="kpi-value blue" id="kpi-total">—</div>
+      <div class="kpi-sub">14 derniers jours</div>
+    </div>
+    <div class="kpi-card green">
+      <div class="kpi-label">Avec message</div>
+      <div class="kpi-value green" id="kpi-msg">—</div>
+      <div class="kpi-sub" id="kpi-taux">taux de conversion</div>
+    </div>
+    <div class="kpi-card orange">
+      <div class="kpi-label">À rappeler</div>
+      <div class="kpi-value orange" id="kpi-recall">—</div>
+      <div class="kpi-sub">messages non traités</div>
+    </div>
+    <div class="kpi-card red">
+      <div class="kpi-label">Urgents</div>
+      <div class="kpi-value red" id="kpi-urgent">—</div>
+      <div class="kpi-sub">14 derniers jours</div>
+    </div>
+  </div>
+
+  <!-- TOOLBAR TABLE -->
+  <div class="section-header">
+    <span class="section-title">Historique des appels</span>
+    <input type="text" id="search" placeholder="🔍  Rechercher un nom, numéro, motif…" oninput="renderTable()">
+    <div class="filter-toggle">
+      <button class="active" onclick="setFilter('all', this)">Tous</button>
+      <button onclick="setFilter('to-recall', this)">À rappeler</button>
+      <button onclick="setFilter('message', this)">Avec message</button>
+      <button onclick="setFilter('urgent', this)">Urgents</button>
+      <button onclick="setFilter('missed', this)">Sans message</button>
+    </div>
+  </div>
+
+  <!-- TABLE -->
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Date / Heure</th>
+          <th>Appelant</th>
+          <th>Motif IA</th>
+          <th>Détail</th>
+          <th>Statut</th>
+          <th>Action rappel</th>
+        </tr>
+      </thead>
+      <tbody id="calls-tbody">
+        <tr><td colspan="6"><div class="empty"><div class="icon">⏳</div>Chargement…</div></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- BAS DE PAGE -->
+  <div class="bottom-grid">
+    <div style="background:white;border-radius:16px;padding:20px 24px;box-shadow:0 1px 4px rgba(0,0,0,0.05);border:1px solid var(--border);">
+      <h3 style="font-size:14px;font-weight:700;margin-bottom:14px;">Comment fonctionne MechaniCall ?</h3>
+      <div style="display:grid;grid-template-columns:auto 1fr;gap:10px 14px;font-size:13px;align-items:start;">
+        <span style="background:var(--blue-soft);color:var(--blue);border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;flex-shrink:0;">1</span>
+        <span><strong>Appel entrant</strong> — Twilio répond et enregistre le message vocal du client</span>
+        <span style="background:var(--blue-soft);color:var(--blue);border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;flex-shrink:0;">2</span>
+        <span><strong>Transcription Whisper</strong> — L'audio est converti en texte par OpenAI Whisper</span>
+        <span style="background:var(--blue-soft);color:var(--blue);border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;flex-shrink:0;">3</span>
+        <span><strong>Analyse GPT</strong> — GPT extrait : nom, motif, urgence, immatriculation, date souhaitée</span>
+        <span style="background:var(--blue-soft);color:var(--blue);border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;flex-shrink:0;">4</span>
+        <span><strong>Email structuré</strong> — Le garage reçoit un résumé complet + audio en pièce jointe</span>
+        <span style="background:var(--blue-soft);color:var(--blue);border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;flex-shrink:0;">5</span>
+        <span><strong>Rapport hebdomadaire</strong> — Chaque vendredi, un rapport KPI est envoyé automatiquement</span>
+      </div>
+    </div>
+    <div class="motif-card">
+      <h3>Motifs les plus fréquents</h3>
+      <div id="motif-bars"><div style="color:var(--muted);font-size:13px;">Chargement…</div></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  const TOKEN_KEY = 'mechanicall_token';
+  let allCalls = [];
+  let currentFilter = 'all';
+  let currentUser = null;
+  let garageSettings = { is_closed: 0, closed_message: '' };
+
+  function getToken() { return localStorage.getItem(TOKEN_KEY); }
+
+  function logout() {
+    localStorage.removeItem(TOKEN_KEY);
+    window.location.href = '/login.html';
+  }
+
+  async function apiFetch(url, options = {}) {
+    const res = await fetch(url, {
+      ...options,
+      headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json', ...(options.headers || {}) },
+    });
+    if (res.status === 401) { logout(); throw new Error('Non authentifié'); }
+    return res;
+  }
+
+  async function checkAuth() {
+    const token = getToken();
+    if (!token) { window.location.href = '/login.html'; return false; }
+    try {
+      const res = await apiFetch('/api/auth/me');
+      if (!res.ok) { logout(); return false; }
+      const data = await res.json();
+      currentUser = data.user;
+      document.getElementById('nav-user-name').textContent = currentUser.display_name || currentUser.username;
+      document.getElementById('nav-garage-id').textContent = currentUser.garage_id;
+      return true;
+    } catch { logout(); return false; }
+  }
+
+  async function loadSettings() {
+    try {
+      const res = await apiFetch('/api/garage/settings');
+      garageSettings = await res.json();
+      renderStatusBanner();
+    } catch {}
+  }
+
+  async function loadData() {
+    try {
+      const res = await apiFetch('/api/dashboard');
+      const data = await res.json();
+      allCalls = data.calls;
+
+      document.getElementById('kpi-total').textContent = data.kpis.total;
+      document.getElementById('kpi-msg').textContent = data.kpis.withMessage;
+      document.getElementById('kpi-taux').textContent = `${data.kpis.taux}% taux de message`;
+      document.getElementById('kpi-recall').textContent = data.kpis.toRecall;
+      document.getElementById('kpi-urgent').textContent = data.kpis.urgent;
+
+      renderMotifBars(data.motifBreakdown);
+      renderTable();
+    } catch(e) { console.error(e); }
+  }
+
+  // --- STATUT GARAGE ---
+
+  function renderStatusBanner() {
+    const isClosed = !!garageSettings.is_closed;
+    const banner = document.getElementById('status-banner');
+    const dot = document.getElementById('status-dot');
+    const label = document.getElementById('status-label');
+    const msgPreview = document.getElementById('status-msg-preview');
+    const btn = document.getElementById('btn-toggle-status');
+
+    banner.className = `status-banner ${isClosed ? 'closed' : 'open'}`;
+    dot.className = `status-dot ${isClosed ? 'closed' : 'open'}`;
+    label.className = `status-label ${isClosed ? 'closed' : 'open'}`;
+    label.textContent = isClosed ? 'Garage fermé' : 'Garage ouvert';
+    msgPreview.textContent = isClosed ? (garageSettings.closed_message || '') : 'Les appels sont enregistrés normalement.';
+    btn.className = `btn-status-toggle ${isClosed ? 'closed' : 'open'}`;
+    btn.textContent = isClosed ? 'Marquer comme ouvert' : 'Marquer comme fermé';
+  }
+
+  async function toggleStatus() {
+    const newClosed = !garageSettings.is_closed;
+    await apiFetch('/api/garage/settings', {
+      method: 'POST',
+      body: JSON.stringify({ is_closed: newClosed, closed_message: garageSettings.closed_message }),
+    });
+    garageSettings.is_closed = newClosed;
+    renderStatusBanner();
+  }
+
+  function openModal() {
+    document.getElementById('modal-msg').value = garageSettings.closed_message || '';
+    document.getElementById('modal-overlay').classList.add('visible');
+  }
+
+  function closeModal() {
+    document.getElementById('modal-overlay').classList.remove('visible');
+  }
+
+  async function saveMessage() {
+    const msg = document.getElementById('modal-msg').value.trim();
+    await apiFetch('/api/garage/settings', {
+      method: 'POST',
+      body: JSON.stringify({ is_closed: garageSettings.is_closed, closed_message: msg }),
+    });
+    garageSettings.closed_message = msg;
+    renderStatusBanner();
+    closeModal();
+  }
+
+  // Fermer le modal en cliquant l'overlay
+  document.getElementById('modal-overlay').addEventListener('click', (e) => {
+    if (e.target === document.getElementById('modal-overlay')) closeModal();
+  });
+
+  // --- TABLE ---
+
+  function setFilter(f, btn) {
+    currentFilter = f;
+    document.querySelectorAll('.filter-toggle button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    renderTable();
+  }
+
+  function formatDate(iso) {
+    if (!iso) return '—';
+    const d = new Date(iso.replace(' ', 'T') + (iso.includes('T') ? '' : 'Z'));
+    const now = new Date();
+    const diffMs = now - d;
+    const diffH = diffMs / 3600000;
+    if (diffH < 1) return `Il y a ${Math.round(diffMs / 60000)} min`;
+    if (diffH < 24) return `Il y a ${Math.round(diffH)}h`;
+    return d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' }) + ' ' +
+           d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function getKnownName(call) {
+    // Nom dans l'analyse du message courant
+    const name = call.analysis?.name;
+    if (name && name !== 'inconnu' && name !== 'unknown') return name;
+    // Fallback : analyse d'un message précédent du même numéro
+    const prevName = call.previous_analysis?.name;
+    if (prevName && prevName !== 'inconnu' && prevName !== 'unknown') return prevName;
+    return null;
+  }
+
+  function renderTable() {
+    const search = document.getElementById('search').value.toLowerCase();
+    let filtered = allCalls.filter(c => {
+      if (currentFilter === 'message' && c.has_message !== 1) return false;
+      if (currentFilter === 'urgent' && !c.analysis?.is_urgent) return false;
+      if (currentFilter === 'missed' && c.has_message !== 0) return false;
+      if (currentFilter === 'to-recall' && !(c.has_message === 1 && !c.recalled_at)) return false;
+      if (search) {
+        const knownName = getKnownName(c) || '';
+        const hay = [c.from_number, knownName, c.analysis?.motive_legend, c.analysis?.motive_details].join(' ').toLowerCase();
+        if (!hay.includes(search)) return false;
+      }
+      return true;
+    });
+
+    const tbody = document.getElementById('calls-tbody');
+    if (filtered.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="6"><div class="empty"><div class="icon">📭</div>Aucun appel trouvé</div></td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = filtered.map(c => {
+      const a = c.analysis;
+      const isUrgent = a?.is_urgent;
+      const hasMsg = c.has_message === 1;
+      const isRecalled = !!c.recalled_at;
+      const knownName = getKnownName(c);
+      const isKnownFromPrev = !a?.name || a.name === 'inconnu' ? !!knownName : false;
+
+      const nameDisplay = knownName
+        ? `<span class="td-caller-name">${knownName}${isKnownFromPrev ? ' <span class="badge badge-known">client connu</span>' : ''}</span>`
+        : `<span class="td-caller-name" style="color:var(--muted);font-style:italic;">Inconnu</span>`;
+
+      const motif = a?.motive_legend || null;
+      const detail = a?.motive_details || '—';
+
+      let statusBadge;
+      if (isUrgent) statusBadge = `<span class="badge badge-urgent">🚨 Urgent</span>`;
+      else if (hasMsg && isRecalled) statusBadge = `<span class="badge badge-recalled">✓ Rappelé</span>`;
+      else if (hasMsg) statusBadge = `<span class="badge badge-to-recall">À rappeler</span>`;
+      else statusBadge = `<span class="badge badge-missed">⚠ Sans message</span>`;
+
+      let recallBtn = '';
+      if (hasMsg) {
+        if (isRecalled) {
+          recallBtn = `<button class="btn-recall recalled" onclick="toggleRecall(event, ${c.id}, true)">✓ Rappelé par ${c.recalled_by || '?'}</button>`;
+        } else {
+          recallBtn = `<button class="btn-recall to-recall" onclick="toggleRecall(event, ${c.id}, false)">Marquer rappelé</button>`;
+        }
+      }
+
+      return `
+        <tr class="data-row ${isUrgent ? '' : ''}" id="row-${c.id}" onclick="toggleExpand(${c.id})">
+          <td class="td-date">${formatDate(c.created_at)}</td>
+          <td>
+            ${nameDisplay}
+            <div class="td-phone">${c.from_number || '—'}</div>
+          </td>
+          <td>
+            ${hasMsg && motif
+              ? `<span class="badge badge-motif">${motif}</span>`
+              : hasMsg ? '<span style="color:var(--muted);font-size:12px;">Non catégorisé</span>'
+              : '<span class="badge badge-missed">Appel manqué</span>'
+            }
+          </td>
+          <td style="color:var(--muted);font-size:12px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${hasMsg ? detail : '—'}</td>
+          <td>${statusBadge}</td>
+          <td onclick="event.stopPropagation()">${recallBtn}</td>
+        </tr>
+        <tr id="expand-${c.id}" style="display:none;" class="expand-row">
+          <td colspan="6">
+            <div class="expand-content">
+              ${hasMsg && a ? `
+              <div class="expand-section">
+                <h4>Analyse IA</h4>
+                <div class="detail-grid">
+                  <span class="detail-key">Nom</span>
+                  <span class="detail-val">${knownName || '—'}${isKnownFromPrev ? ' <span class="badge badge-known" style="font-size:10px;">issu d\'un appel précédent</span>' : ''}</span>
+                  <span class="detail-key">Catégorie</span><span class="detail-val">${a.motive_legend || '—'}</span>
+                  <span class="detail-key">Détail</span><span class="detail-val">${a.motive_details || '—'}</span>
+                  <span class="detail-key">Date souhaitée</span><span class="detail-val">${a.date_preference || '—'}</span>
+                  <span class="detail-key">Immatriculation</span><span class="detail-val">${a.plate_number && a.plate_number !== 'unknown' ? a.plate_number : '—'}</span>
+                  <span class="detail-key">Urgence</span><span class="detail-val ${a.is_urgent ? 'urgent' : ''}">${a.is_urgent ? '🚨 OUI' : 'Non'}</span>
+                </div>
+                ${isRecalled ? `<p class="recall-info">✓ Rappelé par <strong>${c.recalled_by || '?'}</strong> le ${formatDate(c.recalled_at)}</p>` : ''}
+              </div>
+              <div class="expand-section">
+                <h4>Informations appel</h4>
+                <div class="detail-grid">
+                  <span class="detail-key">Numéro</span><span class="detail-val">${c.from_number || '—'}</span>
+                  <span class="detail-key">Durée</span><span class="detail-val">${c.duration ? c.duration + 's' : '—'}</span>
+                  <span class="detail-key">Date</span><span class="detail-val">${formatDate(c.created_at)}</span>
+                </div>
+              </div>
+              <div class="expand-transcript">
+                <strong style="font-size:11px;text-transform:uppercase;letter-spacing:0.7px;color:var(--blue-dark);">Transcription</strong><br><br>
+                ${c.transcript || '—'}
+              </div>
+              ` : `
+              <div style="color:var(--muted);font-size:13px;padding:4px 0;grid-column:1/-1;">
+                ${c.previous_analysis && getKnownName(c)
+                  ? `Appel sans message — client connu : <strong>${getKnownName(c)}</strong> (déjà appelé avec message).`
+                  : 'Appel sans message — le client n\'a pas laissé de message.'
+                }
+              </div>
+              `}
+            </div>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  function toggleExpand(id) {
+    const expandRow = document.getElementById(`expand-${id}`);
+    const row = document.getElementById(`row-${id}`);
+    const isVisible = expandRow.style.display !== 'none';
+    expandRow.style.display = isVisible ? 'none' : 'table-row';
+    row.classList.toggle('expanded', !isVisible);
+  }
+
+  async function toggleRecall(event, callId, isCurrentlyRecalled) {
+    event.stopPropagation();
+    try {
+      const method = isCurrentlyRecalled ? 'DELETE' : 'POST';
+      await apiFetch(`/api/calls/${callId}/recalled`, { method });
+      await loadData();
+    } catch(e) { console.error(e); }
+  }
+
+  function renderMotifBars(motifBreakdown) {
+    const container = document.getElementById('motif-bars');
+    if (!motifBreakdown || motifBreakdown.length === 0) {
+      container.innerHTML = '<div style="color:var(--muted);font-size:13px;">Aucune donnée disponible</div>';
+      return;
+    }
+    const max = motifBreakdown[0][1];
+    container.innerHTML = motifBreakdown.slice(0, 6).map(([motif, count]) => `
+      <div class="motif-bar-item">
+        <div class="motif-bar-label">
+          <span>${motif}</span>
+          <span>${count} appel${count > 1 ? 's' : ''}</span>
+        </div>
+        <div class="motif-bar-track">
+          <div class="motif-bar-fill" style="width:${Math.round((count / max) * 100)}%"></div>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  // Initialisation
+  checkAuth().then(ok => {
+    if (ok) {
+      loadSettings();
+      loadData();
+    }
+  });
+</script>
+</body>
+</html>
