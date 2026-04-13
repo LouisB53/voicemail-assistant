@@ -233,8 +233,8 @@ async function run() {
     try {
       calls = await twilioClient.calls.list({
         to: twilioNumber,
-        startTime: twilioStartDate,
-        endTime: twilioEndDate,
+        startTimeAfter: twilioStartDate,
+        startTimeBefore: twilioEndDate,
       });
     } catch (err) {
       console.error(`   ❌ Erreur API Twilio : ${err.message}`);
