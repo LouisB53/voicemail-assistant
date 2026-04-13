@@ -10,7 +10,6 @@
  *   --dry-run : affiche sans envoyer
  */
 
-import 'dotenv/config';
 import Database from 'better-sqlite3';
 import sgMail from '@sendgrid/mail';
 import { DateTime } from 'luxon';
