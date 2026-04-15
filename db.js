@@ -55,6 +55,17 @@ CREATE TABLE IF NOT EXISTS garage_settings (
   closed_message TEXT,
   updated_at TEXT
 );
+
+CREATE TABLE IF NOT EXISTS contacts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  garage_id TEXT NOT NULL,
+  phone_number TEXT NOT NULL,
+  name TEXT NOT NULL,
+  source TEXT DEFAULT 'manual',
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(garage_id, phone_number)
+);
 `);
 
 // ✅ Ajout des colonnes recalled si elles n’existent pas (migration safe)
@@ -128,6 +139,8 @@ export function getDashboardCalls(garageId, limit = 100) {
       c.duration, c.status, c.created_at,
       c.recalled_at, c.recalled_by,
       m.transcript, m.analysis,
+      ct.name  AS contact_name,
+      ct.source AS contact_source,
       (
         SELECT m2.analysis
         FROM messages m2
@@ -141,6 +154,7 @@ export function getDashboardCalls(garageId, limit = 100) {
       ) AS previous_analysis
     FROM calls c
     LEFT JOIN messages m ON c.call_sid = m.call_sid
+    LEFT JOIN contacts ct ON ct.phone_number = c.from_number AND ct.garage_id = c.garage_id
     WHERE c.garage_id = ?
       AND c.status NOT LIKE 'blocked%'
     ORDER BY c.created_at DESC
@@ -178,6 +192,52 @@ export function getUrgentCount(garageId) {
   return rows.filter(r => {
     try { return JSON.parse(r.analysis)?.is_urgent; } catch { return false; }
   }).length;
+}
+
+export function getReportKpis(garageId, period = "week") {
+  const daysMap = { week: 7, month: 30, quarter: 90, year: 365 };
+  const days = daysMap[period] || 7;
+  const since = `-${days} days`;
+
+  const calls = db.prepare(`
+    SELECT from_number, has_message, recalled_at
+    FROM calls
+    WHERE garage_id = ?
+      AND status NOT LIKE 'blocked%'
+      AND created_at > datetime('now', ?)
+  `).all(garageId, since);
+
+  const messages = db.prepare(`
+    SELECT m.analysis
+    FROM messages m
+    JOIN calls c ON c.call_sid = m.call_sid
+    WHERE c.garage_id = ?
+      AND c.created_at > datetime('now', ?)
+  `).all(garageId, since);
+
+  const total = calls.length;
+  const withMessage = calls.filter(c => c.has_message === 1).length;
+  const toRecall = calls.filter(c => c.has_message === 1 && !c.recalled_at).length;
+  const uniqueCallers = new Set(calls.map(c => c.from_number).filter(Boolean)).size;
+  const taux = total > 0 ? Math.round((withMessage / total) * 100) : 0;
+
+  let urgent = 0;
+  const motifCounts = {};
+  for (const m of messages) {
+    try {
+      const a = JSON.parse(m.analysis);
+      if (a?.is_urgent) urgent++;
+      if (a?.motive_legend) {
+        motifCounts[a.motive_legend] = (motifCounts[a.motive_legend] || 0) + 1;
+      }
+    } catch {}
+  }
+
+  const motifs = Object.entries(motifCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10);
+
+  return { total, withMessage, toRecall, urgent, uniqueCallers, taux, motifs };
 }
 
 export function getMotifBreakdown(garageId) {
@@ -230,6 +290,64 @@ export function setGarageSettings(garageId, isClosed, closedMessage) {
       closed_message = excluded.closed_message,
       updated_at = excluded.updated_at
   `).run(garageId, isClosed ? 1 : 0, closedMessage);
+}
+
+// --- Contacts ---
+
+export function getContacts(garageId) {
+  return db.prepare(`
+    SELECT c.*,
+      (SELECT created_at FROM calls WHERE from_number = c.phone_number AND garage_id = c.garage_id ORDER BY created_at DESC LIMIT 1) as last_call_at
+    FROM contacts c
+    WHERE c.garage_id = ?
+    ORDER BY c.name ASC
+  `).all(garageId);
+}
+
+export function addContact(garageId, phoneNumber, name) {
+  return db.prepare(`
+    INSERT INTO contacts (garage_id, phone_number, name, source)
+    VALUES (?, ?, ?, 'manual')
+  `).run(garageId, phoneNumber, name);
+}
+
+export function updateContact(id, garageId, name, phoneNumber) {
+  // Passer à 'manual' lors de toute modification manuelle = acte de validation
+  return db.prepare(`
+    UPDATE contacts SET name = ?, phone_number = ?, source = 'manual', updated_at = datetime('now')
+    WHERE id = ? AND garage_id = ?
+  `).run(name, phoneNumber, id, garageId);
+}
+
+// Retrouver un contact par numéro de téléphone (pour enrichir les emails)
+export function getContactByPhone(garageId, phoneNumber) {
+  return db.prepare(`
+    SELECT name, source FROM contacts WHERE garage_id = ? AND phone_number = ?
+  `).get(garageId, phoneNumber);
+}
+
+export function deleteContact(id, garageId) {
+  return db.prepare(`DELETE FROM contacts WHERE id = ? AND garage_id = ?`).run(id, garageId);
+}
+
+// Valider un contact auto → le passe définitivement en 'manual'
+export function validateContact(id, garageId) {
+  return db.prepare(`
+    UPDATE contacts SET source = 'manual', updated_at = datetime('now')
+    WHERE id = ? AND garage_id = ?
+  `).run(id, garageId);
+}
+
+// Appelé automatiquement après chaque voicemail analysé — ne remplace jamais un contact manuel
+export function upsertAutoContact(garageId, phoneNumber, name) {
+  if (!name || name === 'inconnu' || name === 'unknown') return;
+  db.prepare(`
+    INSERT INTO contacts (garage_id, phone_number, name, source, updated_at)
+    VALUES (?, ?, ?, 'auto', datetime('now'))
+    ON CONFLICT(garage_id, phone_number) DO UPDATE SET
+      name = CASE WHEN source = 'manual' THEN name ELSE excluded.name END,
+      updated_at = datetime('now')
+  `).run(garageId, phoneNumber, name);
 }
 
 console.log("✅ Base SQLite initialisée avec succès.");

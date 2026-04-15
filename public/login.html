@@ -3,22 +3,22 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MechaniCall — Connexion</title>
+  <title>PitCall — Connexion</title>
   <style>
     :root {
-      --blue: #1d4ed8;
-      --blue-dark: #1e40af;
-      --blue-soft: #dbeafe;
-      --bg: #f1f5f9;
-      --card: #ffffff;
-      --text: #1e293b;
-      --muted: #64748b;
-      --border: #e2e8f0;
-      --red: #ef4444;
+      --bg: #f6f6f1;
+      --surface: #ffffff;
+      --text: #1a1a1a;
+      --muted: #737373;
+      --border: #e5e5e0;
+      --accent: #1d4ed8;
+      --accent-soft: #eff6ff;
+      --red: #dc2626;
+      --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04);
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
       background: var(--bg);
       min-height: 100vh;
       display: flex;
@@ -27,96 +27,111 @@
     }
     .login-wrap {
       width: 100%;
-      max-width: 400px;
+      max-width: 370px;
       padding: 24px;
     }
     .logo-block {
       text-align: center;
-      margin-bottom: 32px;
+      margin-bottom: 28px;
     }
-    .logo-icon {
-      font-size: 42px;
-      margin-bottom: 8px;
-    }
-    .logo-name {
-      font-size: 26px;
-      font-weight: 800;
-      color: var(--blue);
-      letter-spacing: -0.5px;
+    .logo-img {
+      height: 56px;
+      width: auto;
+      mix-blend-mode: multiply;
+      display: block;
+      margin: 0 auto 6px;
     }
     .logo-tagline {
       font-size: 13px;
       color: var(--muted);
-      margin-top: 4px;
+      margin-top: 2px;
     }
     .card {
-      background: var(--card);
-      border-radius: 20px;
-      padding: 32px;
-      box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+      background: var(--surface);
+      border-radius: 10px;
+      padding: 28px;
+      box-shadow: var(--shadow);
       border: 1px solid var(--border);
     }
     .card h2 {
-      font-size: 18px;
-      font-weight: 700;
+      font-size: 15px;
+      font-weight: 600;
       color: var(--text);
-      margin-bottom: 24px;
+      margin-bottom: 20px;
     }
-    .field { margin-bottom: 16px; }
+    .field { margin-bottom: 14px; }
     label {
       display: block;
       font-size: 13px;
-      font-weight: 600;
+      font-weight: 500;
       color: var(--text);
-      margin-bottom: 6px;
+      margin-bottom: 5px;
     }
     input {
       width: 100%;
-      padding: 11px 14px;
-      border: 1.5px solid var(--border);
-      border-radius: 10px;
+      padding: 9px 12px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
       font-size: 14px;
       color: var(--text);
       background: white;
       outline: none;
-      transition: border-color 0.2s, box-shadow 0.2s;
+      transition: border-color 0.15s, box-shadow 0.15s;
     }
     input:focus {
-      border-color: var(--blue);
-      box-shadow: 0 0 0 3px var(--blue-soft);
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
     }
     .btn-login {
       width: 100%;
-      padding: 12px;
-      background: linear-gradient(135deg, var(--blue), var(--blue-dark));
+      padding: 10px;
+      background: var(--accent);
       color: white;
       border: none;
-      border-radius: 10px;
-      font-size: 15px;
-      font-weight: 700;
+      border-radius: 7px;
+      font-size: 14px;
+      font-weight: 600;
       cursor: pointer;
-      margin-top: 8px;
-      transition: opacity 0.2s;
+      margin-top: 6px;
+      transition: opacity 0.15s;
     }
-    .btn-login:hover { opacity: 0.92; }
-    .btn-login:disabled { opacity: 0.6; cursor: default; }
+    .btn-login:hover { opacity: 0.9; }
+    .btn-login:disabled { opacity: 0.5; cursor: default; }
     .error-msg {
       background: #fef2f2;
       color: var(--red);
       border: 1px solid #fecaca;
-      border-radius: 8px;
-      padding: 10px 14px;
+      border-radius: 6px;
+      padding: 9px 12px;
       font-size: 13px;
       margin-top: 12px;
       display: none;
     }
+    .site-footer {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      border-top: 1px solid var(--border);
+      padding: 14px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      background: var(--bg);
+    }
+    .footer-left { font-size: 12px; color: var(--muted); }
+    .footer-right { display: flex; align-items: center; gap: 16px; }
+    .footer-contact { font-size: 12px; color: var(--muted); }
+    .footer-contact a { color: var(--muted); text-decoration: none; }
+    .footer-contact a:hover { color: var(--text); }
+    .footer-sep { color: var(--border); }
   </style>
 </head>
 <body>
   <div class="login-wrap">
     <div class="logo-block">
-      <div class="logo-icon">🔔</div>
-      <div class="logo-name">MechaniCall</div>
+      <img src="/logo.png" alt="PitCall" class="logo-img">
       <div class="logo-tagline">Espace garagiste</div>
     </div>
     <div class="card">
@@ -136,8 +151,17 @@
     </div>
   </div>
 
+  <footer class="site-footer">
+    <div class="footer-left">© 2025 PitCall &nbsp;·&nbsp; v1.0.0</div>
+    <div class="footer-right">
+      <span class="footer-contact">Support : <a href="mailto:louis.becker@pitcall.fr">louis.becker@pitcall.fr</a></span>
+      <span class="footer-sep">|</span>
+      <span class="footer-contact"><a href="tel:+33637760448">06 37 76 04 48</a></span>
+    </div>
+  </footer>
+
   <script>
-    const TOKEN_KEY = 'mechanicall_token';
+    const TOKEN_KEY = 'pitcall_token';
 
     // Déjà connecté ?
     if (localStorage.getItem(TOKEN_KEY)) {

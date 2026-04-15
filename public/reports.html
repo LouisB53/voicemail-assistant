@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PitCall — Rapports</title>
+  <style>
+    :root {
+      --bg: #f6f6f1;
+      --surface: #ffffff;
+      --text: #1a1a1a;
+      --text-2: #404040;
+      --muted: #737373;
+      --border: #e5e5e0;
+      --border-2: #d1d1cb;
+      --accent: #1d4ed8;
+      --blue: #1d4ed8;
+      --blue-dark: #1e40af;
+      --blue-soft: #eff6ff;
+      --green: #16a34a;
+      --green-soft: #f0fdf4;
+      --red: #dc2626;
+      --red-soft: #fef2f2;
+      --orange: #d97706;
+      --orange-soft: #fffbeb;
+      --radius: 8px;
+      --shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 14px;
+    }
+
+    /* ── NAV ── */
+    nav {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 32px;
+      height: 112px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .nav-left { display: flex; align-items: center; gap: 40px; }
+    .nav-brand { display: flex; align-items: center; }
+    .nav-logo-img { height: 52px; width: auto; mix-blend-mode: multiply; display: block; }
+    .nav-links { display: flex; gap: 4px; }
+    .nav-link {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 16px;
+      font-weight: 500;
+      padding: 8px 16px;
+      border-radius: 8px;
+      transition: color 0.12s, background 0.12s;
+    }
+    .nav-link:hover { color: var(--text); background: var(--bg); }
+    .nav-link.active { color: var(--text); font-weight: 600; }
+    .nav-right { display: flex; align-items: center; gap: 14px; }
+    .nav-user { font-size: 16px; font-weight: 600; color: var(--text); }
+    .nav-garage { font-size: 13px; color: var(--muted); }
+    .btn-nav {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-2);
+      padding: 9px 18px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 15px;
+      transition: background 0.12s, border-color 0.12s;
+    }
+    .btn-nav:hover { background: var(--bg); border-color: var(--border-2); }
+    .btn-logout { color: var(--muted); }
+    .btn-logout:hover { color: var(--red); border-color: #fecaca; background: var(--red-soft); }
+
+    /* ── LAYOUT ── */
+    .container { max-width: 1100px; margin: 0 auto; padding: 24px; }
+
+    /* ── EN-TÊTE PAGE ── */
+    .page-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .page-title { font-size: 20px; font-weight: 700; }
+    .page-subtitle { font-size: 13px; color: var(--muted); margin-top: 3px; }
+
+    /* ── FILTRE PÉRIODE ── */
+    .period-toggle {
+      display: flex;
+      gap: 2px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 3px;
+    }
+    .period-toggle button {
+      padding: 4px 12px;
+      border: none;
+      background: transparent;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 12px;
+      color: var(--muted);
+      transition: all 0.12s;
+      white-space: nowrap;
+    }
+    .period-toggle button.active {
+      background: white;
+      color: var(--text);
+      font-weight: 600;
+      box-shadow: var(--shadow);
+    }
+
+    /* ── KPI GRID ── */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+    .kpi-card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 20px 22px;
+      border: 1px solid var(--border);
+    }
+    .kpi-label {
+      font-size: 11px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .kpi-value { font-size: 32px; font-weight: 700; line-height: 1; color: var(--text); }
+    .kpi-sub { font-size: 11px; color: var(--muted); margin-top: 6px; }
+
+    /* ── BOTTOM GRID ── */
+    .bottom-grid {
+      display: grid;
+      grid-template-columns: 3fr 2fr;
+      gap: 20px;
+    }
+
+    /* ── MOTIFS ── */
+    .motif-card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 20px 22px;
+      border: 1px solid var(--border);
+    }
+    .card-title { font-size: 20px; font-weight: 700; margin-bottom: 20px; color: var(--text); }
+    .motif-bar-item { margin-bottom: 14px; }
+    .motif-bar-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; gap: 10px; }
+    .motif-bar-name { font-size: 13px; color: var(--text-2); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .motif-bar-count { font-size: 12px; color: var(--muted); white-space: nowrap; flex-shrink: 0; }
+    .motif-bar-track { background: var(--border); border-radius: 4px; height: 7px; }
+    .motif-bar-fill { background: var(--accent); border-radius: 4px; height: 7px; transition: width 0.5s ease; }
+
+    /* ── RÉCAPITULATIF PÉRIODE ── */
+    .recap-card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 20px 22px;
+      border: 1px solid var(--border);
+    }
+    .recap-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 9px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+    }
+    .recap-row:last-child { border-bottom: none; }
+    .recap-key { color: var(--muted); }
+    .recap-val { font-weight: 600; color: var(--text); }
+
+    /* ── ÉTAT VIDE / CHARGEMENT ── */
+    .empty { text-align: center; padding: 48px 20px; color: var(--muted); font-size: 13px; }
+    .empty .icon { font-size: 28px; margin-bottom: 10px; }
+
+    /* ── SKELETON ── */
+    .skeleton {
+      background: linear-gradient(90deg, var(--border) 25%, #eee 50%, var(--border) 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.4s infinite;
+      border-radius: 4px;
+    }
+    @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+    /* ── FOOTER ── */
+    .site-footer {
+      border-top: 1px solid var(--border);
+      margin-top: 40px;
+      padding: 18px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .footer-left { font-size: 12px; color: var(--muted); }
+    .footer-right { display: flex; align-items: center; gap: 20px; }
+    .footer-contact { font-size: 12px; color: var(--muted); }
+    .footer-contact a { color: var(--muted); text-decoration: none; }
+    .footer-contact a:hover { color: var(--text); }
+    .footer-sep { color: var(--border); }
+
+    @media (max-width: 900px) {
+      .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+      .bottom-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-left">
+    <div class="nav-brand">
+      <img src="/logo.png" alt="PitCall" class="nav-logo-img">
+    </div>
+    <div class="nav-links">
+      <a class="nav-link" href="/dashboard.html">Tableau de bord</a>
+      <a class="nav-link" href="/contacts.html">Contacts</a>
+      <a class="nav-link active" href="/reports.html">Rapports</a>
+    </div>
+  </div>
+  <div class="nav-right">
+    <div style="text-align:right;">
+      <div class="nav-user" id="nav-user-name">—</div>
+      <div class="nav-garage" id="nav-garage-id">—</div>
+    </div>
+    <button class="btn-nav btn-logout" onclick="logout()">Déconnexion</button>
+  </div>
+</nav>
+
+<div class="container">
+
+  <div class="page-header">
+    <div>
+      <div class="page-title">Rapports</div>
+      <div class="page-subtitle" id="period-subtitle">Chargement…</div>
+    </div>
+    <div class="period-toggle">
+      <button class="active" onclick="setPeriod('week', this)">Semaine</button>
+      <button onclick="setPeriod('month', this)">Mois</button>
+      <button onclick="setPeriod('quarter', this)">Trimestre</button>
+      <button onclick="setPeriod('year', this)">Année</button>
+    </div>
+  </div>
+
+  <!-- KPI GRID -->
+  <div class="kpi-grid">
+    <div class="kpi-card">
+      <div class="kpi-label">Appels manqués</div>
+      <div class="kpi-value" id="kpi-total">—</div>
+      <div class="kpi-sub" id="kpi-total-sub"></div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Messages laissés</div>
+      <div class="kpi-value" id="kpi-msg">—</div>
+      <div class="kpi-sub" id="kpi-taux">—</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Appelants uniques</div>
+      <div class="kpi-value" id="kpi-unique">—</div>
+      <div class="kpi-sub">numéros distincts</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">À rappeler</div>
+      <div class="kpi-value" id="kpi-recall">—</div>
+      <div class="kpi-sub">messages non traités</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Urgents</div>
+      <div class="kpi-value" id="kpi-urgent">—</div>
+      <div class="kpi-sub">sur la période</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Taux avec message</div>
+      <div class="kpi-value" id="kpi-rate">—</div>
+      <div class="kpi-sub">des appels convertis</div>
+    </div>
+  </div>
+
+  <!-- BOTTOM -->
+  <div class="bottom-grid">
+    <div class="motif-card">
+      <div class="card-title">Motifs d'appel</div>
+      <div id="motif-bars"><div class="empty"><div class="icon">⏳</div>Chargement…</div></div>
+    </div>
+    <div class="recap-card">
+      <div class="card-title">Récapitulatif</div>
+      <div id="recap-rows">
+        <div class="empty"><div class="icon">⏳</div>Chargement…</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<footer class="site-footer">
+  <div class="footer-left">© 2025 PitCall &nbsp;·&nbsp; v1.0.0</div>
+  <div class="footer-right">
+    <span class="footer-contact">Support : <a href="mailto:louis.becker@pitcall.fr">louis.becker@pitcall.fr</a></span>
+    <span class="footer-sep">|</span>
+    <span class="footer-contact"><a href="tel:+33637760448">06 37 76 04 48</a></span>
+  </div>
+</footer>
+
+<script>
+  const TOKEN_KEY = 'pitcall_token';
+  let currentPeriod = 'week';
+
+  const PERIOD_LABELS = {
+    week:    '7 derniers jours',
+    month:   '30 derniers jours',
+    quarter: '90 derniers jours',
+    year:    '365 derniers jours',
+  };
+
+  const PERIOD_SUB = {
+    week:    'sur la semaine',
+    month:   'sur le mois',
+    quarter: 'sur le trimestre',
+    year:    "sur l'année",
+  };
+
+  function getToken() { return localStorage.getItem(TOKEN_KEY); }
+
+  function logout() {
+    localStorage.removeItem(TOKEN_KEY);
+    window.location.href = '/login.html';
+  }
+
+  async function apiFetch(url, options = {}) {
+    const res = await fetch(url, {
+      ...options,
+      headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json', ...(options.headers || {}) },
+    });
+    if (res.status === 401) { logout(); throw new Error('Non authentifié'); }
+    return res;
+  }
+
+  async function checkAuth() {
+    const token = getToken();
+    if (!token) { window.location.href = '/login.html'; return false; }
+    try {
+      const res = await apiFetch('/api/auth/me');
+      if (!res.ok) { logout(); return false; }
+      const data = await res.json();
+      document.getElementById('nav-user-name').textContent = data.user.display_name || data.user.username;
+      document.getElementById('nav-garage-id').textContent = data.user.garage_id;
+      return true;
+    } catch { logout(); return false; }
+  }
+
+  function setPeriod(period, btn) {
+    currentPeriod = period;
+    document.querySelectorAll('.period-toggle button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    loadReport();
+  }
+
+  async function loadReport() {
+    // Réinitialiser l'état
+    ['kpi-total','kpi-msg','kpi-unique','kpi-recall','kpi-urgent','kpi-rate'].forEach(id => {
+      document.getElementById(id).textContent = '—';
+    });
+    document.getElementById('period-subtitle').textContent = 'Chargement…';
+    document.getElementById('motif-bars').innerHTML = '<div class="empty"><div class="icon">⏳</div>Chargement…</div>';
+    document.getElementById('recap-rows').innerHTML = '<div class="empty"><div class="icon">⏳</div>Chargement…</div>';
+
+    try {
+      const res = await apiFetch(`/api/reports?period=${currentPeriod}`);
+      const d = await res.json();
+
+      // Sous-titre période
+      document.getElementById('period-subtitle').textContent = PERIOD_LABELS[currentPeriod];
+
+      // KPI cards
+      document.getElementById('kpi-total').textContent   = d.total;
+      document.getElementById('kpi-msg').textContent     = d.withMessage;
+      document.getElementById('kpi-taux').textContent    = `${d.taux}% des appels`;
+      document.getElementById('kpi-unique').textContent  = d.uniqueCallers;
+      document.getElementById('kpi-recall').textContent  = d.toRecall;
+      document.getElementById('kpi-urgent').textContent  = d.urgent;
+      document.getElementById('kpi-rate').textContent    = `${d.taux}%`;
+      document.getElementById('kpi-total-sub').textContent = PERIOD_SUB[currentPeriod];
+
+      // Motifs
+      renderMotifBars(d.motifs);
+
+      // Récapitulatif
+      renderRecap(d);
+
+    } catch(e) { console.error(e); }
+  }
+
+  function renderMotifBars(motifs) {
+    const container = document.getElementById('motif-bars');
+    if (!motifs || motifs.length === 0) {
+      container.innerHTML = '<div class="empty"><div class="icon">📋</div>Aucun motif sur cette période</div>';
+      return;
+    }
+    const max = motifs[0][1];
+    container.innerHTML = motifs.map(([motif, count]) => `
+      <div class="motif-bar-item">
+        <div class="motif-bar-row">
+          <span class="motif-bar-name">${motif}</span>
+          <span class="motif-bar-count">${count} appel${count > 1 ? 's' : ''}</span>
+        </div>
+        <div class="motif-bar-track">
+          <div class="motif-bar-fill" style="width:${Math.round((count / max) * 100)}%"></div>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function renderRecap(d) {
+    const container = document.getElementById('recap-rows');
+    if (d.total === 0) {
+      container.innerHTML = '<div class="empty"><div class="icon">📭</div>Aucun appel sur cette période</div>';
+      return;
+    }
+
+    const missed = d.total - d.withMessage;
+    const recalled = d.withMessage - d.toRecall;
+
+    container.innerHTML = [
+      ['Appels manqués',       d.total],
+      ['Appelants uniques',    d.uniqueCallers],
+      ['Messages laissés',     d.withMessage],
+      ['Appels sans message',  missed],
+      ['Rappelés',             recalled],
+      ['Restant à rappeler',   d.toRecall],
+      ['Urgents',              d.urgent],
+      ['Taux de message',      `${d.taux}%`],
+    ].map(([key, val]) => `
+      <div class="recap-row">
+        <span class="recap-key">${key}</span>
+        <span class="recap-val">${val}</span>
+      </div>
+    `).join('');
+  }
+
+  // Init
+  checkAuth().then(ok => { if (ok) loadReport(); });
+</script>
+</body>
+</html>

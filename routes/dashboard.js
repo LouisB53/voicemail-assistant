@@ -5,6 +5,7 @@ import {
   getDashboardKpis,
   getUrgentCount,
   getMotifBreakdown,
+  getReportKpis,
   markRecalled,
   unmarkRecalled,
   getGarageSettings,
@@ -38,6 +39,15 @@ router.get("/dashboard", (req, res) => {
     calls,
     motifBreakdown,
   });
+});
+
+// GET /api/reports?period=week|month|quarter|year
+router.get("/reports", (req, res) => {
+  const period = ["week", "month", "quarter", "year"].includes(req.query.period)
+    ? req.query.period
+    : "week";
+  const data = getReportKpis(req.user.garage_id, period);
+  res.json({ period, ...data });
 });
 
 // POST /api/calls/:id/recalled — marquer comme rappelé
