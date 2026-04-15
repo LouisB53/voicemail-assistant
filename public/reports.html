@@ -64,7 +64,10 @@
     .nav-link.active { color: var(--text); font-weight: 600; }
     .nav-right { display: flex; align-items: center; gap: 14px; }
     .nav-user { font-size: 16px; font-weight: 600; color: var(--text); }
-    .nav-garage { font-size: 13px; color: var(--muted); }
+    .nav-account { font-size: 13px; color: var(--muted); cursor: pointer; text-decoration: underline; text-decoration-color: var(--border-2); text-underline-offset: 2px; transition: color 0.12s; background: none; border: none; padding: 0; }
+    .nav-account:hover { color: var(--accent); text-decoration-color: var(--accent); }
+    .btn-generate { padding: 8px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 7px; font-size: 12px; font-weight: 500; color: var(--text-2); cursor: pointer; white-space: nowrap; transition: background 0.12s; }
+    .btn-generate:hover { background: var(--border); }
     .btn-nav {
       background: transparent;
       border: 1px solid var(--border);
@@ -81,6 +84,10 @@
 
     /* ── LAYOUT ── */
     .container { max-width: 1100px; margin: 0 auto; padding: 24px; }
+    .garage-pills { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 20px; }
+    .garage-pill { padding: 6px 16px; border-radius: 20px; border: 1px solid var(--border); background: var(--surface); color: var(--text-2); font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.12s; }
+    .garage-pill:hover { border-color: var(--border-2); background: var(--bg); }
+    .garage-pill.active { background: var(--accent); color: white; border-color: var(--accent); }
 
     /* ── EN-TÊTE PAGE ── */
     .page-header {
@@ -199,6 +206,22 @@
     }
     @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 
+    /* ── MODAL ── */
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.3); z-index: 200; align-items: center; justify-content: center; }
+    .modal-overlay.visible { display: flex; }
+    .modal { background: var(--surface); border-radius: 10px; padding: 28px; width: 100%; max-width: 420px; box-shadow: 0 8px 32px rgba(0,0,0,0.12); border: 1px solid var(--border); }
+    .modal h3 { font-size: 15px; font-weight: 600; margin-bottom: 20px; }
+    .field { margin-bottom: 18px; }
+    .field label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; color: var(--text); }
+    .field input { width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: 7px; font-size: 14px; outline: none; transition: border-color 0.15s, box-shadow 0.15s; }
+    .field input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--blue-soft); }
+    .modal-error { font-size: 13px; color: var(--red); min-height: 18px; margin: 10px 0 4px; }
+    .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+    .btn-cancel { padding: 9px 16px; border: 1px solid var(--border); border-radius: 7px; background: transparent; cursor: pointer; font-size: 13px; transition: background 0.12s; }
+    .btn-cancel:hover { background: var(--bg); }
+    .btn-save { padding: 9px 16px; background: var(--accent); color: white; border: none; border-radius: 7px; font-size: 13px; font-weight: 600; cursor: pointer; transition: opacity 0.12s; }
+    .btn-save:hover { opacity: 0.9; }
+
     /* ── FOOTER ── */
     .site-footer {
       border-top: 1px solid var(--border);
@@ -231,7 +254,7 @@
       <img src="/logo.png" alt="PitCall" class="nav-logo-img">
     </div>
     <div class="nav-links">
-      <a class="nav-link" href="/dashboard.html">Tableau de bord</a>
+      <a class="nav-link" href="/dashboard.html" id="nav-link-dashboard">Tableau de bord</a>
       <a class="nav-link" href="/contacts.html">Contacts</a>
       <a class="nav-link active" href="/reports.html">Rapports</a>
     </div>
@@ -239,13 +262,43 @@
   <div class="nav-right">
     <div style="text-align:right;">
       <div class="nav-user" id="nav-user-name">—</div>
-      <div class="nav-garage" id="nav-garage-id">—</div>
+      <button class="nav-account" onclick="openAccountModal()">Mon compte</button>
     </div>
     <button class="btn-nav btn-logout" onclick="logout()">Déconnexion</button>
   </div>
 </nav>
 
+<!-- Modal Mon compte -->
+<div class="modal-overlay" id="account-modal-overlay">
+  <div class="modal">
+    <h3>Mon compte</h3>
+    <div class="field">
+      <label>Identifiant de connexion</label>
+      <input type="text" id="account-username" autocomplete="username">
+    </div>
+    <div class="field">
+      <label>Nouveau mot de passe</label>
+      <div style="display:flex;gap:8px;">
+        <input type="text" id="account-password" placeholder="Laisser vide pour ne pas changer" style="flex:1;">
+        <button class="btn-generate" onclick="generatePassword()">Générer</button>
+      </div>
+    </div>
+    <div class="field">
+      <label>Confirmer le mot de passe</label>
+      <input type="text" id="account-password-confirm" placeholder="Confirmer le nouveau mot de passe">
+    </div>
+    <div class="modal-error" id="account-error"></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeAccountModal()">Annuler</button>
+      <button class="btn-save" onclick="saveCredentials()">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
 <div class="container">
+
+  <!-- Sélecteur garage admin -->
+  <div id="garage-selector" style="display:none" class="garage-pills"></div>
 
   <div class="page-header">
     <div>
@@ -322,6 +375,9 @@
 <script>
   const TOKEN_KEY = 'pitcall_token';
   let currentPeriod = 'week';
+  let currentUser = null;
+  let adminGarage = null;
+  let adminGarages = [];
 
   const PERIOD_LABELS = {
     week:    '7 derniers jours',
@@ -341,6 +397,7 @@
 
   function logout() {
     localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem('pitcall_user');
     window.location.href = '/login.html';
   }
 
@@ -360,10 +417,33 @@
       const res = await apiFetch('/api/auth/me');
       if (!res.ok) { logout(); return false; }
       const data = await res.json();
-      document.getElementById('nav-user-name').textContent = data.user.display_name || data.user.username;
-      document.getElementById('nav-garage-id').textContent = data.user.garage_id;
+      currentUser = data.user;
+      document.getElementById('nav-user-name').textContent = currentUser.display_name || currentUser.username;
+      if (currentUser.role === 'admin') {
+        document.getElementById('nav-link-dashboard').href = '/admin.html';
+        const gr = await apiFetch('/api/admin/garages');
+        adminGarages = await gr.json();
+        if (adminGarages.length > 0) adminGarage = adminGarages[0].id;
+        renderGarageSelector();
+      }
       return true;
     } catch { logout(); return false; }
+  }
+
+  function renderGarageSelector() {
+    const el = document.getElementById('garage-selector');
+    el.style.display = 'flex';
+    el.innerHTML = adminGarages.map(g => `
+      <button class="garage-pill ${g.id === adminGarage ? 'active' : ''}" onclick="selectGarage('${g.id}')">
+        ${g.name}
+      </button>
+    `).join('');
+  }
+
+  function selectGarage(id) {
+    adminGarage = id;
+    renderGarageSelector();
+    loadReport();
   }
 
   function setPeriod(period, btn) {
@@ -383,7 +463,8 @@
     document.getElementById('recap-rows').innerHTML = '<div class="empty"><div class="icon">⏳</div>Chargement…</div>';
 
     try {
-      const res = await apiFetch(`/api/reports?period=${currentPeriod}`);
+      const garageParam = (currentUser?.role === 'admin' && adminGarage) ? `&garage=${encodeURIComponent(adminGarage)}` : '';
+      const res = await apiFetch(`/api/reports?period=${currentPeriod}${garageParam}`);
       const d = await res.json();
 
       // Sous-titre période
@@ -454,6 +535,52 @@
       </div>
     `).join('');
   }
+
+  // --- MON COMPTE ---
+
+  function openAccountModal() {
+    document.getElementById('account-username').value = currentUser?.username || '';
+    document.getElementById('account-password').value = '';
+    document.getElementById('account-password-confirm').value = '';
+    document.getElementById('account-error').textContent = '';
+    document.getElementById('account-modal-overlay').classList.add('visible');
+  }
+
+  function closeAccountModal() {
+    document.getElementById('account-modal-overlay').classList.remove('visible');
+  }
+
+  function generatePassword() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%&*';
+    let pwd = '';
+    for (let i = 0; i < 12; i++) pwd += chars[Math.floor(Math.random() * chars.length)];
+    document.getElementById('account-password').value = pwd;
+    document.getElementById('account-password-confirm').value = pwd;
+  }
+
+  async function saveCredentials() {
+    const username = document.getElementById('account-username').value.trim();
+    const password = document.getElementById('account-password').value;
+    const confirm = document.getElementById('account-password-confirm').value;
+    const errEl = document.getElementById('account-error');
+    errEl.textContent = '';
+    if (password && password !== confirm) { errEl.textContent = 'Les mots de passe ne correspondent pas.'; return; }
+    const body = {};
+    if (username !== currentUser.username) body.newUsername = username;
+    if (password) body.newPassword = password;
+    if (!body.newUsername && !body.newPassword) { closeAccountModal(); return; }
+    try {
+      const res = await apiFetch('/api/auth/credentials', { method: 'POST', body: JSON.stringify(body) });
+      const data = await res.json();
+      if (!res.ok) { errEl.textContent = data.error; return; }
+      closeAccountModal();
+      if (body.newUsername) logout();
+    } catch { errEl.textContent = 'Erreur réseau.'; }
+  }
+
+  document.getElementById('account-modal-overlay').addEventListener('click', (e) => {
+    if (e.target === document.getElementById('account-modal-overlay')) closeAccountModal();
+  });
 
   // Init
   checkAuth().then(ok => { if (ok) loadReport(); });

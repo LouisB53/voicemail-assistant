@@ -77,7 +77,10 @@
     .nav-link.active { color: var(--text); font-weight: 600; }
     .nav-right { display: flex; align-items: center; gap: 14px; }
     .nav-user { font-size: 16px; font-weight: 600; color: var(--text); }
-    .nav-garage { font-size: 13px; color: var(--muted); }
+    .nav-account { font-size: 13px; color: var(--muted); cursor: pointer; text-decoration: underline; text-decoration-color: var(--border-2); text-underline-offset: 2px; transition: color 0.12s; background: none; border: none; padding: 0; }
+    .nav-account:hover { color: var(--accent); text-decoration-color: var(--accent); }
+    .btn-generate { padding: 8px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 7px; font-size: 12px; font-weight: 500; color: var(--text-2); cursor: pointer; white-space: nowrap; transition: background 0.12s; }
+    .btn-generate:hover { background: var(--border); }
     .btn-nav {
       background: transparent;
       border: 1px solid var(--border);
@@ -169,7 +172,18 @@
       box-shadow: 0 8px 40px rgba(0,0,0,0.14);
       border: 1px solid var(--border);
     }
-    .modal h3 { font-size: 15px; font-weight: 600; margin-bottom: 14px; }
+    .modal h3 { font-size: 15px; font-weight: 600; margin-bottom: 20px; }
+    .field { margin-bottom: 18px; }
+    .field:last-of-type { margin-bottom: 0; }
+    .field label { display: block; font-size: 13px; font-weight: 500; color: var(--text); margin-bottom: 6px; }
+    .field input { width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: 7px; font-size: 14px; color: var(--text); outline: none; transition: border-color 0.15s, box-shadow 0.15s; }
+    .field input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--blue-soft); }
+    .modal-error { font-size: 13px; color: var(--red); min-height: 18px; margin: 10px 0 4px; }
+    .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+    .btn-cancel { padding: 9px 16px; border: 1px solid var(--border); border-radius: 7px; background: transparent; cursor: pointer; font-size: 13px; transition: background 0.12s; }
+    .btn-cancel:hover { background: var(--bg); }
+    .btn-save { padding: 9px 16px; background: var(--accent); color: white; border: none; border-radius: 7px; font-size: 13px; font-weight: 600; cursor: pointer; transition: opacity 0.12s; }
+    .btn-save:hover { opacity: 0.9; }
     .modal textarea {
       width: 100%;
       border: 1px solid var(--border);
@@ -472,12 +486,39 @@
   <div class="nav-right">
     <div style="text-align:right;">
       <div class="nav-user" id="nav-user-name">—</div>
-      <div class="nav-garage" id="nav-garage-id">—</div>
+      <button class="nav-account" onclick="openAccountModal()">Mon compte</button>
     </div>
     <button class="btn-nav" onclick="loadData()">Actualiser</button>
     <button class="btn-nav btn-logout" onclick="logout()">Déconnexion</button>
   </div>
 </nav>
+
+<!-- Modal Mon compte -->
+<div class="modal-overlay" id="account-modal-overlay">
+  <div class="modal">
+    <h3>Mon compte</h3>
+    <div class="field">
+      <label>Identifiant de connexion</label>
+      <input type="text" id="account-username" autocomplete="username">
+    </div>
+    <div class="field">
+      <label>Nouveau mot de passe</label>
+      <div style="display:flex;gap:8px;">
+        <input type="text" id="account-password" placeholder="Laisser vide pour ne pas changer" style="flex:1;">
+        <button class="btn-generate" onclick="generatePassword()">Générer</button>
+      </div>
+    </div>
+    <div class="field">
+      <label>Confirmer le mot de passe</label>
+      <input type="text" id="account-password-confirm" placeholder="Confirmer le nouveau mot de passe">
+    </div>
+    <div class="modal-error" id="account-error"></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeAccountModal()">Annuler</button>
+      <button class="btn-save" onclick="saveCredentials()">Enregistrer</button>
+    </div>
+  </div>
+</div>
 
 <!-- Modal message de fermeture -->
 <div class="modal-overlay" id="modal-overlay">
@@ -588,6 +629,7 @@
 
   function logout() {
     localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem('pitcall_user');
     window.location.href = '/login.html';
   }
 
@@ -609,7 +651,6 @@
       const data = await res.json();
       currentUser = data.user;
       document.getElementById('nav-user-name').textContent = currentUser.display_name || currentUser.username;
-      document.getElementById('nav-garage-id').textContent = currentUser.garage_id;
       return true;
     } catch { logout(); return false; }
   }
@@ -873,6 +914,57 @@
       await loadData();
     } catch(e) { console.error(e); }
   }
+
+  // --- MON COMPTE ---
+
+  function openAccountModal() {
+    document.getElementById('account-username').value = currentUser?.username || '';
+    document.getElementById('account-password').value = '';
+    document.getElementById('account-password-confirm').value = '';
+    document.getElementById('account-error').textContent = '';
+    document.getElementById('account-modal-overlay').classList.add('visible');
+  }
+
+  function closeAccountModal() {
+    document.getElementById('account-modal-overlay').classList.remove('visible');
+  }
+
+  function generatePassword() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%&*';
+    let pwd = '';
+    for (let i = 0; i < 12; i++) pwd += chars[Math.floor(Math.random() * chars.length)];
+    document.getElementById('account-password').value = pwd;
+    document.getElementById('account-password-confirm').value = pwd;
+  }
+
+  async function saveCredentials() {
+    const username = document.getElementById('account-username').value.trim();
+    const password = document.getElementById('account-password').value;
+    const confirm = document.getElementById('account-password-confirm').value;
+    const errEl = document.getElementById('account-error');
+    errEl.textContent = '';
+
+    if (password && password !== confirm) {
+      errEl.textContent = 'Les mots de passe ne correspondent pas.';
+      return;
+    }
+    const body = {};
+    if (username !== currentUser.username) body.newUsername = username;
+    if (password) body.newPassword = password;
+    if (!body.newUsername && !body.newPassword) { closeAccountModal(); return; }
+
+    try {
+      const res = await apiFetch('/api/auth/credentials', { method: 'POST', body: JSON.stringify(body) });
+      const data = await res.json();
+      if (!res.ok) { errEl.textContent = data.error; return; }
+      closeAccountModal();
+      if (body.newUsername) logout(); // identifiant changé → reconnecter
+    } catch { errEl.textContent = 'Erreur réseau.'; }
+  }
+
+  document.getElementById('account-modal-overlay').addEventListener('click', (e) => {
+    if (e.target === document.getElementById('account-modal-overlay')) closeAccountModal();
+  });
 
   // Initialisation
   checkAuth().then(ok => {

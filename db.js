@@ -68,6 +68,25 @@ CREATE TABLE IF NOT EXISTS contacts (
 );
 `);
 
+// ✅ Migration : colonne role sur users
+const usersColumns = db.prepare("PRAGMA table_info(users)").all().map(c => c.name);
+if (!usersColumns.includes("role")) {
+  db.exec("ALTER TABLE users ADD COLUMN role TEXT DEFAULT ‘user’");
+}
+
+// ✅ Table erreurs serveur
+db.exec(`
+CREATE TABLE IF NOT EXISTS server_errors (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  route TEXT,
+  message TEXT,
+  stack TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  resolved_at TEXT,
+  resolved_by TEXT
+);
+`);
+
 // ✅ Ajout des colonnes recalled si elles n’existent pas (migration safe)
 const callsColumns = db.prepare("PRAGMA table_info(calls)").all().map(c => c.name);
 if (!callsColumns.includes("recalled_at")) {
@@ -127,7 +146,96 @@ export function getUserByUsername(username) {
 }
 
 export function getUserById(id) {
-  return db.prepare("SELECT id, garage_id, username, display_name FROM users WHERE id = ?").get(id);
+  return db.prepare("SELECT id, garage_id, username, display_name, role FROM users WHERE id = ?").get(id);
+}
+
+// --- Admin ---
+
+export function getAdminCalls(garageId = null, limit = 200) {
+  const sql = `
+    SELECT
+      c.id, c.call_sid, c.from_number, c.garage_id, c.has_message,
+      c.duration, c.status, c.created_at,
+      c.recalled_at, c.recalled_by,
+      m.analysis,
+      ct.name  AS contact_name,
+      ct.source AS contact_source
+    FROM calls c
+    LEFT JOIN messages m ON c.call_sid = m.call_sid
+    LEFT JOIN contacts ct ON ct.phone_number = c.from_number AND ct.garage_id = c.garage_id
+    WHERE c.status NOT LIKE 'blocked%'
+    ${garageId ? 'AND c.garage_id = ?' : ''}
+    ORDER BY c.created_at DESC
+    LIMIT ?
+  `;
+  const params = garageId ? [garageId, limit] : [limit];
+  const rows = db.prepare(sql).all(...params);
+  return rows.map(r => ({
+    ...r,
+    analysis: r.analysis ? JSON.parse(r.analysis) : null,
+  }));
+}
+
+export function getAdminKpis(garageId = null) {
+  const where = garageId ? 'AND garage_id = ?' : '';
+  const params = garageId ? [garageId] : [];
+  return db.prepare(`
+    SELECT
+      COUNT(*) as total,
+      SUM(has_message) as with_message,
+      SUM(CASE WHEN has_message = 1 AND recalled_at IS NULL THEN 1 ELSE 0 END) as to_recall
+    FROM calls
+    WHERE status NOT LIKE 'blocked%'
+      AND created_at > datetime('now', '-14 days')
+      ${where}
+  `).get(...params);
+}
+
+export function getGaragesSummary() {
+  return db.prepare(`
+    SELECT
+      garage_id,
+      COUNT(*) as total,
+      SUM(has_message) as with_message,
+      SUM(CASE WHEN has_message = 1 AND recalled_at IS NULL THEN 1 ELSE 0 END) as to_recall
+    FROM calls
+    WHERE status NOT LIKE 'blocked%'
+      AND created_at > datetime('now', '-14 days')
+    GROUP BY garage_id
+    ORDER BY garage_id
+  `).all();
+}
+
+export function logServerError(route, message, stack) {
+  return db.prepare(`
+    INSERT INTO server_errors (route, message, stack)
+    VALUES (?, ?, ?)
+  `).run(route, message || '', stack || '');
+}
+
+export function getServerErrors(onlyUnresolved = false) {
+  const where = onlyUnresolved ? 'WHERE resolved_at IS NULL' : '';
+  return db.prepare(`SELECT * FROM server_errors ${where} ORDER BY created_at DESC LIMIT 100`).all();
+}
+
+export function countUnresolvedErrors() {
+  return db.prepare(`SELECT COUNT(*) as n FROM server_errors WHERE resolved_at IS NULL`).get()?.n ?? 0;
+}
+
+export function resolveServerError(id, by) {
+  return db.prepare(`
+    UPDATE server_errors SET resolved_at = datetime('now'), resolved_by = ? WHERE id = ?
+  `).run(by, id);
+}
+
+// --- Credentials ---
+
+export function updateUsername(id, newUsername) {
+  return db.prepare("UPDATE users SET username = ? WHERE id = ?").run(newUsername, id);
+}
+
+export function updatePassword(id, passwordHash) {
+  return db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(passwordHash, id);
 }
 
 // --- Dashboard ---

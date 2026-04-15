@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PitCall — Admin</title>
+  <style>
+    :root {
+      --bg: #f6f6f1;
+      --surface: #ffffff;
+      --text: #1a1a1a;
+      --text-2: #404040;
+      --muted: #737373;
+      --border: #e5e5e0;
+      --border-2: #d1d1cb;
+      --accent: #1d4ed8;
+      --blue: #1d4ed8;
+      --blue-dark: #1e40af;
+      --blue-soft: #eff6ff;
+      --green: #16a34a;
+      --green-soft: #f0fdf4;
+      --red: #dc2626;
+      --red-soft: #fef2f2;
+      --orange: #d97706;
+      --orange-soft: #fffbeb;
+      --radius: 8px;
+      --shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 14px;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── NAV ── */
+    nav {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 32px;
+      height: 112px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .nav-left { display: flex; align-items: center; gap: 40px; }
+    .nav-brand { display: flex; align-items: center; }
+    .nav-logo-img { height: 52px; width: auto; mix-blend-mode: multiply; display: block; }
+    .nav-links { display: flex; gap: 4px; }
+    .nav-link {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 16px;
+      font-weight: 500;
+      padding: 8px 16px;
+      border-radius: 8px;
+      transition: color 0.12s, background 0.12s;
+      cursor: pointer;
+      background: none;
+      border: none;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .nav-link:hover { color: var(--text); background: var(--bg); }
+    .nav-link.active { color: var(--text); font-weight: 600; }
+    .nav-right { display: flex; align-items: center; gap: 14px; }
+    .nav-user { font-size: 16px; font-weight: 600; color: var(--text); }
+    .nav-account { font-size: 13px; color: var(--muted); cursor: pointer; text-decoration: underline; text-decoration-color: var(--border-2); text-underline-offset: 2px; transition: color 0.12s; background: none; border: none; padding: 0; }
+    .nav-account:hover { color: var(--accent); text-decoration-color: var(--accent); }
+    .btn-nav {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-2);
+      padding: 9px 18px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 15px;
+      transition: background 0.12s, border-color 0.12s;
+    }
+    .btn-nav:hover { background: var(--bg); border-color: var(--border-2); }
+    .btn-logout { color: var(--muted); }
+    .btn-logout:hover { color: var(--red); border-color: #fecaca; background: var(--red-soft); }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--red);
+      color: white;
+      font-size: 10px;
+      font-weight: 700;
+      min-width: 17px;
+      height: 17px;
+      border-radius: 9px;
+      padding: 0 4px;
+    }
+
+    /* ── LAYOUT ── */
+    .container { max-width: 1100px; margin: 0 auto; padding: 24px; flex: 1; width: 100%; }
+
+    /* ── SECTION TABS ── */
+    .section-tabs { display: flex; gap: 2px; margin-bottom: 24px; border-bottom: 2px solid var(--border); }
+    .section-tab {
+      padding: 10px 18px;
+      font-size: 15px;
+      font-weight: 500;
+      color: var(--muted);
+      cursor: pointer;
+      border: none;
+      background: none;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      transition: color 0.12s;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+    .section-tab:hover { color: var(--text); }
+    .section-tab.active { color: var(--text); font-weight: 600; border-bottom-color: var(--accent); }
+
+    /* ── GARAGE PILLS ── */
+    .garage-pills { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 20px; }
+    .pill {
+      padding: 6px 16px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text-2);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.12s;
+    }
+    .pill:hover { border-color: var(--border-2); background: var(--bg); }
+    .pill.active { background: var(--accent); color: white; border-color: var(--accent); }
+
+    /* ── GARAGE SUMMARY GRID ── */
+    .garages-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; margin-bottom: 24px; }
+    .garage-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+      cursor: pointer;
+      transition: border-color 0.12s, box-shadow 0.12s;
+    }
+    .garage-card:hover { border-color: var(--border-2); box-shadow: 0 2px 8px rgba(0,0,0,0.07); }
+    .garage-card-name { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 12px; }
+    .garage-stats { display: flex; gap: 14px; }
+    .garage-stat { text-align: center; }
+    .garage-stat-value { font-size: 22px; font-weight: 700; color: var(--text); line-height: 1; }
+    .garage-stat-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin-top: 3px; }
+    .garage-stat-value.red { color: var(--red); }
+
+    /* ── KPI CARDS ── */
+    .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 20px; }
+    .kpi-card { background: var(--surface); border-radius: var(--radius); padding: 18px 20px; border: 1px solid var(--border); }
+    .kpi-label { font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); margin-bottom: 8px; }
+    .kpi-value { font-size: 28px; font-weight: 700; line-height: 1; color: var(--text); }
+    .kpi-sub { font-size: 11px; color: var(--muted); margin-top: 5px; }
+
+    /* ── TABLE ── */
+    .section-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+    .section-title { font-size: 20px; font-weight: 700; flex: 1; }
+    input[type=text] {
+      padding: 7px 12px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      font-size: 13px;
+      background: white;
+      color: var(--text);
+      outline: none;
+      width: 220px;
+      transition: border-color 0.15s;
+    }
+    input[type=text]:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--blue-soft); }
+    .filter-toggle {
+      display: flex; gap: 2px; background: var(--bg); border: 1px solid var(--border); border-radius: 7px; padding: 3px;
+    }
+    .filter-toggle button {
+      padding: 4px 12px; border: none; background: transparent; border-radius: 5px; cursor: pointer;
+      font-size: 12px; color: var(--muted); transition: all 0.12s;
+    }
+    .filter-toggle button.active { background: var(--surface); color: var(--text); font-weight: 500; box-shadow: 0 1px 2px rgba(0,0,0,0.06); }
+    .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+    table { width: 100%; border-collapse: collapse; }
+    thead th {
+      text-align: left;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--muted);
+      padding: 11px 14px;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+    }
+    tbody tr { border-bottom: 1px solid var(--border); transition: background 0.08s; }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: #fafaf8; }
+    td { padding: 11px 14px; font-size: 13px; color: var(--text-2); vertical-align: middle; }
+    .td-number { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; }
+    .td-number a { color: var(--text-2); text-decoration: none; }
+    .td-number a:hover { color: var(--accent); }
+    .td-empty { text-align: center; padding: 32px; color: var(--muted); font-size: 13px; }
+    .status-dot-sm { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+    .status-dot-sm.green { background: var(--green); }
+    .status-dot-sm.orange { background: var(--orange); }
+    .status-dot-sm.grey { background: var(--border-2); }
+    .tag {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 2px 8px; border-radius: 12px;
+      font-size: 11px; font-weight: 500;
+    }
+    .tag.urgent { background: var(--red-soft); color: var(--red); }
+    .tag.pending { background: var(--orange-soft); color: var(--orange); }
+    .tag.recalled { background: var(--green-soft); color: var(--green); }
+    .tag.no-msg { background: var(--bg); color: var(--muted); border: 1px solid var(--border); }
+    .tag.garage { background: var(--blue-soft); color: var(--blue); }
+    .contact-name { font-weight: 500; font-size: 12px; color: var(--text); }
+    .contact-auto { font-size: 11px; color: var(--muted); font-style: italic; }
+
+    /* ── ERRORS SECTION ── */
+    .error-row-resolved td { opacity: 0.5; }
+    .error-route { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 11px; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; }
+    .error-msg-text { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .btn-resolve { padding: 5px 12px; font-size: 12px; font-weight: 500; border: 1px solid var(--green); color: var(--green); background: var(--green-soft); border-radius: 6px; cursor: pointer; transition: all 0.12s; }
+    .btn-resolve:hover { background: #dcfce7; }
+    .btn-resolve:disabled { opacity: 0.4; cursor: default; }
+    .resolved-by { font-size: 11px; color: var(--muted); }
+
+    /* ── MODAL ── */
+    .modal-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.3); z-index: 200;
+      align-items: center; justify-content: center;
+    }
+    .modal-overlay.visible { display: flex; }
+    .modal {
+      background: white; border-radius: 10px; padding: 24px;
+      width: 100%; max-width: 480px;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.14); border: 1px solid var(--border);
+    }
+    .modal h3 { font-size: 15px; font-weight: 600; margin-bottom: 20px; }
+    .field { margin-bottom: 18px; }
+    .field label { display: block; font-size: 13px; font-weight: 500; color: var(--text); margin-bottom: 6px; }
+    .field input { width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: 7px; font-size: 14px; color: var(--text); outline: none; transition: border-color 0.15s; }
+    .field input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--blue-soft); }
+    .modal-error { font-size: 13px; color: var(--red); min-height: 18px; margin: 10px 0 4px; }
+    .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+    .btn-cancel { padding: 8px 16px; border: 1px solid var(--border); border-radius: 7px; background: transparent; cursor: pointer; font-size: 13px; color: var(--text-2); transition: background 0.12s; }
+    .btn-cancel:hover { background: var(--bg); }
+    .btn-save { padding: 8px 18px; background: var(--accent); color: white; border: none; border-radius: 7px; font-size: 13px; font-weight: 600; cursor: pointer; transition: opacity 0.12s; }
+    .btn-save:hover { opacity: 0.9; }
+    .btn-generate { padding: 8px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 7px; font-size: 12px; font-weight: 500; color: var(--text-2); cursor: pointer; white-space: nowrap; transition: background 0.12s; }
+    .btn-generate:hover { background: var(--border); }
+
+    /* ── FOOTER ── */
+    .site-footer {
+      border-top: 1px solid var(--border);
+      padding: 14px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      background: var(--bg);
+    }
+    .footer-left { font-size: 12px; color: var(--muted); }
+    .footer-right { display: flex; align-items: center; gap: 16px; }
+    .footer-contact { font-size: 12px; color: var(--muted); }
+    .footer-contact a { color: var(--muted); text-decoration: none; }
+    .footer-contact a:hover { color: var(--text); }
+    .footer-sep { color: var(--border); }
+
+    .loading-state { text-align: center; padding: 48px; color: var(--muted); font-size: 14px; }
+  </style>
+</head>
+<body>
+  <nav>
+    <div class="nav-left">
+      <div class="nav-brand">
+        <img src="/logo.png" alt="PitCall" class="nav-logo-img">
+      </div>
+      <div class="nav-links">
+        <a class="nav-link active" href="/admin.html">Tableau de bord</a>
+        <a class="nav-link" href="/contacts.html">Contacts</a>
+        <a class="nav-link" href="/reports.html">Rapports</a>
+      </div>
+    </div>
+    <div class="nav-right">
+      <div style="text-align:right;">
+        <div class="nav-user" id="nav-user"></div>
+        <button class="nav-account" onclick="openAccountModal()">Mon compte</button>
+      </div>
+      <button class="btn-nav btn-logout" onclick="logout()">Déconnexion</button>
+    </div>
+  </nav>
+
+  <div class="container" id="main-container">
+    <!-- ONGLETS ADMIN -->
+    <div class="section-tabs">
+      <button class="section-tab active" id="tab-btn-dashboard" onclick="showSection('dashboard')">Tableau de bord</button>
+      <button class="section-tab" id="tab-btn-errors" onclick="showSection('errors')">
+        Erreurs
+        <span class="badge" id="errors-badge" style="display:none">0</span>
+      </button>
+    </div>
+
+    <!-- SECTION DASHBOARD -->
+    <div id="section-dashboard">
+      <div class="garage-pills" id="garage-pills">
+        <div class="loading-state">Chargement…</div>
+      </div>
+      <div id="dashboard-content">
+        <div class="loading-state">Chargement…</div>
+      </div>
+    </div>
+
+    <!-- SECTION ERRORS -->
+    <div id="section-errors" style="display:none">
+      <div class="section-header">
+        <div class="section-title">Erreurs serveur</div>
+        <div class="filter-toggle">
+          <button id="err-filter-unresolved" class="active" onclick="setErrorFilter('unresolved')">Non résolues</button>
+          <button id="err-filter-all" onclick="setErrorFilter('all')">Toutes</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Route</th>
+              <th>Message</th>
+              <th>Statut</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="errors-table-body">
+            <tr><td class="td-empty" colspan="5">Chargement…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Mon compte -->
+  <div class="modal-overlay" id="account-modal">
+    <div class="modal">
+      <h3>Mon compte</h3>
+      <div class="field">
+        <label>Nouvel identifiant</label>
+        <input type="text" id="new-username" placeholder="Laisser vide pour ne pas modifier" autocomplete="username">
+      </div>
+      <div class="field">
+        <label>Nouveau mot de passe</label>
+        <div style="display:flex;gap:8px">
+          <input type="text" id="new-password" placeholder="Laisser vide pour ne pas modifier" autocomplete="new-password">
+          <button class="btn-generate" onclick="generatePassword()">Générer</button>
+        </div>
+      </div>
+      <div class="modal-error" id="account-error"></div>
+      <div class="modal-actions">
+        <button class="btn-cancel" onclick="closeAccountModal()">Annuler</button>
+        <button class="btn-save" id="btn-save-account" onclick="saveCredentials()">Enregistrer</button>
+      </div>
+    </div>
+  </div>
+
+  <footer class="site-footer">
+    <div class="footer-left">© 2025 PitCall &nbsp;·&nbsp; v1.0.0</div>
+    <div class="footer-right">
+      <span class="footer-contact">Support : <a href="mailto:louis.becker@pitcall.fr">louis.becker@pitcall.fr</a></span>
+      <span class="footer-sep">|</span>
+      <span class="footer-contact"><a href="tel:+33637760448">06 37 76 04 48</a></span>
+    </div>
+  </footer>
+
+  <script>
+    const TOKEN_KEY = 'pitcall_token';
+    let currentUser = null;
+    let currentGarage = 'all';
+    let currentSection = 'dashboard';
+    let errorFilter = 'unresolved';
+    let allGarages = [];
+
+    // ── Auth ──
+    function getToken() { return localStorage.getItem(TOKEN_KEY); }
+    function logout() {
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem('pitcall_user');
+      window.location.href = '/login.html';
+    }
+    async function checkAuth() {
+      const token = getToken();
+      if (!token) { window.location.href = '/login.html'; return; }
+      try {
+        const res = await fetch('/api/auth/me', { headers: { Authorization: `Bearer ${token}` } });
+        if (!res.ok) { logout(); return; }
+        const data = await res.json();
+        currentUser = data.user;
+        if (currentUser.role !== 'admin') { window.location.href = '/dashboard.html'; return; }
+        document.getElementById('nav-user').textContent = currentUser.display_name || currentUser.username;
+        init();
+      } catch { logout(); }
+    }
+
+    // ── Init ──
+    async function init() {
+      await loadGarages();
+      await loadErrorsBadge();
+    }
+
+    async function loadGarages() {
+      const res = await fetch('/api/admin/garages', { headers: { Authorization: `Bearer ${getToken()}` } });
+      allGarages = await res.json();
+      renderGaragePills();
+      loadDashboard();
+    }
+
+    function renderGaragePills() {
+      const container = document.getElementById('garage-pills');
+      const pills = [{ id: 'all', name: 'Tous' }, ...allGarages];
+      container.innerHTML = pills.map(g => `
+        <button class="pill ${g.id === currentGarage ? 'active' : ''}" onclick="selectGarage('${g.id}')">
+          ${g.name}
+        </button>
+      `).join('');
+    }
+
+    function selectGarage(garageId) {
+      currentGarage = garageId;
+      renderGaragePills();
+      loadDashboard();
+    }
+
+    // ── Dashboard ──
+    async function loadDashboard() {
+      const content = document.getElementById('dashboard-content');
+      content.innerHTML = '<div class="loading-state">Chargement…</div>';
+      const param = currentGarage === 'all' ? 'all' : currentGarage;
+      const res = await fetch(`/api/admin/dashboard?garage=${encodeURIComponent(param)}`, {
+        headers: { Authorization: `Bearer ${getToken()}` }
+      });
+      const data = await res.json();
+      if (data.mode === 'all') renderAllMode(data);
+      else renderSingleMode(data);
+    }
+
+    function renderAllMode(data) {
+      const content = document.getElementById('dashboard-content');
+      const summaryHtml = (data.summary || []).map(g => {
+        const toRecall = g.to_recall || 0;
+        return `
+          <div class="garage-card" onclick="selectGarage('${g.garage_id}')">
+            <div class="garage-card-name">${getGarageName(g.garage_id)}</div>
+            <div class="garage-stats">
+              <div class="garage-stat">
+                <div class="garage-stat-value">${g.total}</div>
+                <div class="garage-stat-label">Appels</div>
+              </div>
+              <div class="garage-stat">
+                <div class="garage-stat-value">${g.with_message}</div>
+                <div class="garage-stat-label">Messages</div>
+              </div>
+              <div class="garage-stat">
+                <div class="garage-stat-value ${toRecall > 0 ? 'red' : ''}">${toRecall}</div>
+                <div class="garage-stat-label">À rappeler</div>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      content.innerHTML = `
+        <div class="garages-grid">${summaryHtml || '<div class="td-empty">Aucune donnée</div>'}</div>
+        <div class="section-header">
+          <div class="section-title">Tous les appels récents</div>
+          <input type="text" id="search-input" placeholder="Rechercher…" oninput="filterTable(this.value)">
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Garage</th>
+                <th>Numéro</th>
+                <th>Contact</th>
+                <th>Motif</th>
+                <th>Rappelé</th>
+                <th>Statut</th>
+              </tr>
+            </thead>
+            <tbody id="calls-table-body">
+              ${renderCallRows(data.calls, true)}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    function renderSingleMode(data) {
+      const kpis = data.kpis || {};
+      const garageName = getGarageName(data.garage);
+      const content = document.getElementById('dashboard-content');
+      content.innerHTML = `
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-label">Appels manqués</div>
+            <div class="kpi-value">${kpis.total ?? '—'}</div>
+            <div class="kpi-sub">14 derniers jours</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Messages laissés</div>
+            <div class="kpi-value">${kpis.with_message ?? '—'}</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">À rappeler</div>
+            <div class="kpi-value" style="color:${(kpis.to_recall ?? 0) > 0 ? 'var(--red)' : 'var(--text)'}">
+              ${kpis.to_recall ?? '—'}
+            </div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Rappelés</div>
+            <div class="kpi-value">${((kpis.with_message ?? 0) - (kpis.to_recall ?? 0))}</div>
+          </div>
+        </div>
+        <div class="section-header">
+          <div class="section-title">Appels — ${garageName}</div>
+          <input type="text" id="search-input" placeholder="Rechercher…" oninput="filterTable(this.value)">
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Numéro</th>
+                <th>Contact</th>
+                <th>Motif</th>
+                <th>Rappelé</th>
+                <th>Statut</th>
+              </tr>
+            </thead>
+            <tbody id="calls-table-body">
+              ${renderCallRows(data.calls, false)}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    function renderCallRows(calls, showGarage) {
+      if (!calls || calls.length === 0) {
+        return `<tr><td class="td-empty" colspan="${showGarage ? 7 : 6}">Aucun appel</td></tr>`;
+      }
+      return calls.map(c => {
+        const date = formatDate(c.created_at);
+        const num = c.from_number ? `<a href="tel:${c.from_number}">${formatPhone(c.from_number)}</a>` : '—';
+        const contact = c.contact_name
+          ? `<span class="contact-name">${esc(c.contact_name)}</span>${c.contact_source === 'auto' ? ' <span class="contact-auto">(auto)</span>' : ''}`
+          : '<span style="color:var(--muted)">—</span>';
+        const motif = c.analysis?.motive_legend
+          ? `<span style="font-size:12px;color:var(--text-2)">${esc(c.analysis.motive_legend)}</span>${c.analysis.is_urgent ? ' <span class="tag urgent">Urgent</span>' : ''}`
+          : (c.has_message ? '<span style="color:var(--muted);font-size:12px">—</span>' : '');
+        const recalled = c.recalled_at
+          ? `<span class="tag recalled">✓ Rappelé</span><div style="font-size:10px;color:var(--muted);margin-top:2px">${esc(c.recalled_by || '')}</div>`
+          : (c.has_message ? '<span class="tag pending">À rappeler</span>' : '');
+        const status = c.has_message
+          ? '<span class="status-dot-sm green"></span>Message'
+          : '<span class="status-dot-sm grey"></span>Pas de message';
+        const garageTd = showGarage ? `<td><span class="tag garage">${esc(getGarageName(c.garage_id))}</span></td>` : '';
+        return `
+          <tr data-search="${esc((c.from_number || '') + ' ' + (c.contact_name || '') + ' ' + (c.analysis?.motive_legend || '') + ' ' + (c.garage_id || ''))}">
+            <td style="white-space:nowrap;font-size:12px;color:var(--muted)">${date}</td>
+            ${garageTd}
+            <td class="td-number">${num}</td>
+            <td>${contact}</td>
+            <td>${motif}</td>
+            <td>${recalled}</td>
+            <td style="font-size:12px">${status}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function filterTable(q) {
+      const rows = document.querySelectorAll('#calls-table-body tr[data-search]');
+      const lower = q.toLowerCase();
+      rows.forEach(r => {
+        r.style.display = r.dataset.search.toLowerCase().includes(lower) ? '' : 'none';
+      });
+    }
+
+    // ── Errors ──
+    async function loadErrorsBadge() {
+      try {
+        const res = await fetch('/api/admin/errors?filter=unresolved', { headers: { Authorization: `Bearer ${getToken()}` } });
+        const data = await res.json();
+        const badge = document.getElementById('errors-badge');
+        if (data.unresolved > 0) {
+          badge.textContent = data.unresolved;
+          badge.style.display = 'inline-flex';
+        } else {
+          badge.style.display = 'none';
+        }
+      } catch {}
+    }
+
+    async function loadErrors() {
+      const tbody = document.getElementById('errors-table-body');
+      tbody.innerHTML = '<tr><td class="td-empty" colspan="5">Chargement…</td></tr>';
+      const res = await fetch(`/api/admin/errors?filter=${errorFilter}`, { headers: { Authorization: `Bearer ${getToken()}` } });
+      const data = await res.json();
+      const errors = data.errors || [];
+      if (errors.length === 0) {
+        tbody.innerHTML = '<tr><td class="td-empty" colspan="5">Aucune erreur</td></tr>';
+        return;
+      }
+      tbody.innerHTML = errors.map(e => {
+        const resolved = !!e.resolved_at;
+        const statusCell = resolved
+          ? `<span style="color:var(--green);font-size:12px">✓ Résolu</span><div class="resolved-by">${esc(e.resolved_by || '')} · ${formatDate(e.resolved_at)}</div>`
+          : '<span style="color:var(--red);font-size:12px">Non résolu</span>';
+        const actionCell = resolved
+          ? '<span style="color:var(--muted);font-size:12px">—</span>'
+          : `<button class="btn-resolve" onclick="resolveError(${e.id}, this)">Résoudre</button>`;
+        return `
+          <tr class="${resolved ? 'error-row-resolved' : ''}">
+            <td style="white-space:nowrap;font-size:12px;color:var(--muted)">${formatDate(e.created_at)}</td>
+            <td><span class="error-route">${esc(e.route || '—')}</span></td>
+            <td><div class="error-msg-text" title="${esc(e.message || '')}">${esc(e.message || '—')}</div></td>
+            <td>${statusCell}</td>
+            <td>${actionCell}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function setErrorFilter(f) {
+      errorFilter = f;
+      document.getElementById('err-filter-unresolved').classList.toggle('active', f === 'unresolved');
+      document.getElementById('err-filter-all').classList.toggle('active', f === 'all');
+      loadErrors();
+    }
+
+    async function resolveError(id, btn) {
+      btn.disabled = true;
+      btn.textContent = '…';
+      try {
+        await fetch(`/api/admin/errors/${id}/resolve`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${getToken()}` }
+        });
+        loadErrors();
+        loadErrorsBadge();
+      } catch {
+        btn.disabled = false;
+        btn.textContent = 'Résoudre';
+      }
+    }
+
+    // ── Sections ──
+    function showSection(section) {
+      currentSection = section;
+      document.getElementById('section-dashboard').style.display = section === 'dashboard' ? '' : 'none';
+      document.getElementById('section-errors').style.display = section === 'errors' ? '' : 'none';
+      document.getElementById('tab-btn-dashboard').classList.toggle('active', section === 'dashboard');
+      document.getElementById('tab-btn-errors').classList.toggle('active', section === 'errors');
+      if (section === 'errors') loadErrors();
+    }
+
+    // ── Account modal ──
+    function openAccountModal() {
+      document.getElementById('new-username').value = '';
+      document.getElementById('new-password').value = '';
+      document.getElementById('account-error').textContent = '';
+      document.getElementById('btn-save-account').disabled = false;
+      document.getElementById('btn-save-account').textContent = 'Enregistrer';
+      document.getElementById('account-modal').classList.add('visible');
+    }
+    function closeAccountModal() {
+      document.getElementById('account-modal').classList.remove('visible');
+    }
+    function generatePassword() {
+      const chars = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%';
+      let pwd = '';
+      for (let i = 0; i < 14; i++) pwd += chars[Math.floor(Math.random() * chars.length)];
+      document.getElementById('new-password').value = pwd;
+    }
+    async function saveCredentials() {
+      const newUsername = document.getElementById('new-username').value.trim();
+      const newPassword = document.getElementById('new-password').value;
+      const errEl = document.getElementById('account-error');
+      const btn = document.getElementById('btn-save-account');
+      errEl.textContent = '';
+      if (!newUsername && !newPassword) { errEl.textContent = 'Renseignez au moins un champ.'; return; }
+      btn.disabled = true; btn.textContent = 'Enregistrement…';
+      try {
+        const res = await fetch('/api/auth/credentials', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+          body: JSON.stringify({ newUsername: newUsername || undefined, newPassword: newPassword || undefined }),
+        });
+        const data = await res.json();
+        if (!res.ok) { errEl.textContent = data.error || 'Erreur.'; btn.disabled = false; btn.textContent = 'Enregistrer'; return; }
+        closeAccountModal();
+        if (newUsername && newUsername !== currentUser.username) logout();
+      } catch { errEl.textContent = 'Erreur réseau.'; btn.disabled = false; btn.textContent = 'Enregistrer'; }
+    }
+    document.getElementById('account-modal').addEventListener('click', e => {
+      if (e.target === document.getElementById('account-modal')) closeAccountModal();
+    });
+
+    // ── Helpers ──
+    function getGarageName(garageId) {
+      const g = allGarages.find(x => x.id === garageId);
+      return g ? g.name : garageId;
+    }
+    function formatDate(iso) {
+      if (!iso) return '—';
+      const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z');
+      return d.toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
+    }
+    function formatPhone(num) {
+      if (!num) return '—';
+      const d = num.replace(/\D/g, '');
+      if (d.startsWith('33') && d.length === 11) {
+        const local = '0' + d.slice(2);
+        return local.replace(/(\d{2})(?=\d)/g, '$1 ').trim();
+      }
+      return num;
+    }
+    function esc(s) {
+      return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    // ── Start ──
+    checkAuth();
+  </script>
+</body>
+</html>

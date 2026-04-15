@@ -107,6 +107,46 @@
       margin-top: 12px;
       display: none;
     }
+    .forgot-link {
+      display: block;
+      text-align: right;
+      font-size: 12px;
+      color: var(--muted);
+      text-decoration: underline;
+      text-decoration-color: #d1d1cb;
+      text-underline-offset: 2px;
+      cursor: pointer;
+      margin-top: 10px;
+      background: none;
+      border: none;
+      padding: 0;
+      transition: color 0.12s;
+    }
+    .forgot-link:hover { color: var(--accent); text-decoration-color: var(--accent); }
+    .modal-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.3); z-index: 200;
+      align-items: center; justify-content: center;
+    }
+    .modal-overlay.visible { display: flex; }
+    .modal {
+      background: white; border-radius: 10px; padding: 28px;
+      width: 100%; max-width: 370px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.12); border: 1px solid var(--border);
+    }
+    .modal h3 { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+    .modal-sub { font-size: 13px; color: var(--muted); margin-bottom: 18px; }
+    .modal-field { margin-bottom: 14px; }
+    .modal-field label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 5px; }
+    .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+    .btn-cancel { padding: 9px 16px; border: 1px solid var(--border); border-radius: 7px; background: transparent; cursor: pointer; font-size: 13px; }
+    .btn-cancel:hover { background: var(--bg); }
+    .btn-send { padding: 9px 16px; background: var(--accent); color: white; border: none; border-radius: 7px; font-size: 13px; font-weight: 600; cursor: pointer; }
+    .btn-send:hover { opacity: 0.9; }
+    .btn-send:disabled { opacity: 0.5; cursor: default; }
+    .modal-msg { font-size: 13px; min-height: 18px; margin-top: 8px; }
+    .modal-msg.error { color: var(--red); }
+    .modal-msg.success { color: #16a34a; }
     .site-footer {
       position: fixed;
       bottom: 0;
@@ -147,7 +187,25 @@
         </div>
         <button type="submit" class="btn-login" id="btn-submit">Se connecter</button>
         <div class="error-msg" id="error-msg"></div>
+        <button type="button" class="forgot-link" onclick="openForgotModal()">Mot de passe oublié ?</button>
       </form>
+    </div>
+  </div>
+
+  <!-- Modal mot de passe oublié -->
+  <div class="modal-overlay" id="forgot-overlay">
+    <div class="modal">
+      <h3>Mot de passe oublié</h3>
+      <p class="modal-sub">Entrez votre identifiant de connexion. Un lien de réinitialisation sera envoyé à l'adresse email de votre garage.</p>
+      <div class="modal-field">
+        <label for="forgot-username">Identifiant</label>
+        <input type="text" id="forgot-username" class="input" placeholder="Votre identifiant" autocomplete="username">
+      </div>
+      <div class="modal-msg" id="forgot-msg"></div>
+      <div class="modal-actions">
+        <button class="btn-cancel" onclick="closeForgotModal()">Annuler</button>
+        <button class="btn-send" id="btn-send" onclick="sendReset()">Envoyer</button>
+      </div>
     </div>
   </div>
 
@@ -163,10 +221,57 @@
   <script>
     const TOKEN_KEY = 'pitcall_token';
 
-    // Déjà connecté ?
-    if (localStorage.getItem(TOKEN_KEY)) {
-      window.location.href = '/dashboard.html';
+    const _existingToken = localStorage.getItem(TOKEN_KEY);
+    if (_existingToken) {
+      try {
+        const _user = JSON.parse(localStorage.getItem('pitcall_user') || '{}');
+        window.location.href = _user.role === 'admin' ? '/admin.html' : '/dashboard.html';
+      } catch {
+        window.location.href = '/dashboard.html';
+      }
     }
+
+    function openForgotModal() {
+      document.getElementById('forgot-username').value = document.getElementById('username').value || '';
+      document.getElementById('forgot-msg').textContent = '';
+      document.getElementById('forgot-msg').className = 'modal-msg';
+      document.getElementById('btn-send').disabled = false;
+      document.getElementById('btn-send').textContent = 'Envoyer';
+      document.getElementById('forgot-overlay').classList.add('visible');
+    }
+
+    function closeForgotModal() {
+      document.getElementById('forgot-overlay').classList.remove('visible');
+    }
+
+    async function sendReset() {
+      const username = document.getElementById('forgot-username').value.trim();
+      const msgEl = document.getElementById('forgot-msg');
+      const btn = document.getElementById('btn-send');
+      msgEl.textContent = '';
+      if (!username) { msgEl.textContent = 'Veuillez entrer votre identifiant.'; msgEl.className = 'modal-msg error'; return; }
+      btn.disabled = true;
+      btn.textContent = 'Envoi…';
+      try {
+        await fetch('/api/auth/forgot-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username }),
+        });
+        msgEl.textContent = 'Si ce compte existe, un email a été envoyé. Vérifiez votre boîte mail.';
+        msgEl.className = 'modal-msg success';
+        btn.textContent = 'Envoyé';
+      } catch {
+        msgEl.textContent = 'Erreur réseau. Réessayez.';
+        msgEl.className = 'modal-msg error';
+        btn.disabled = false;
+        btn.textContent = 'Envoyer';
+      }
+    }
+
+    document.getElementById('forgot-overlay').addEventListener('click', (e) => {
+      if (e.target === document.getElementById('forgot-overlay')) closeForgotModal();
+    });
 
     document.getElementById('login-form').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -188,7 +293,8 @@
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Erreur de connexion.');
         localStorage.setItem(TOKEN_KEY, data.token);
-        window.location.href = '/dashboard.html';
+        localStorage.setItem('pitcall_user', JSON.stringify(data.user));
+        window.location.href = data.user.role === 'admin' ? '/admin.html' : '/dashboard.html';
       } catch (err) {
         errEl.textContent = err.message;
         errEl.style.display = 'block';

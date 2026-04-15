@@ -12,6 +12,8 @@ import { saveCall, saveMessage, getAllCalls, getRecentCalls, getGarageSettings, 
 import authRouter from "./routes/auth.js";
 import dashboardRouter from "./routes/dashboard.js";
 import contactsRouter from "./routes/contacts.js";
+import adminRouter from "./routes/admin.js";
+import { logServerError } from "./db.js";
 import { escapeHtml, normalizePhone } from "./utils/extractors.js";
 import { DateTime } from "luxon";
 import Twilio from "twilio"; // Ajout de Twilio pour la gestion API
@@ -37,27 +39,13 @@ app.use(express.static("public"));
 app.use("/api/auth", authRouter);
 app.use("/api", dashboardRouter);
 app.use("/api", contactsRouter);
+app.use("/api/admin", adminRouter);
 
 // --- DÉBUT DU BLOC MODIFIÉ POUR LA SÉCURITÉ ET AZURE APP SERVICE ---
 
-// Charger la configuration des garages (priorité à la variable d'environnement Azure pour la sécurité)
-let GARAGES;
-const configString = process.env.GARAGES_CONFIG;
-
-if (configString) {
-    try {
-        GARAGES = JSON.parse(configString);
-        console.log("✅ Configuration des garages chargée depuis la variable d'environnement Azure.");
-    } catch (error) {
-        console.error("❌ ERREUR: Impossible de parser la variable GARAGES_CONFIG. Utilisation du fichier local.", error);
-        // Fallback si le JSON est mal formaté (utile pour les tests locaux)
-        GARAGES = JSON.parse(fs.readFileSync("./garages.json", "utf-8")); 
-    }
-} else {
-    // Si la variable n'existe pas (par exemple, en développement local), utilise le fichier.
-    console.warn("⚠️ Variable GARAGES_CONFIG non trouvée. Utilisation du fichier local garages.json.");
-    GARAGES = JSON.parse(fs.readFileSync("./garages.json", "utf-8"));
-}
+// Charger la configuration des garages depuis le module partagé
+import { GARAGES } from "./utils/garages.js";
+console.log("✅ Configuration des garages chargée.");
 
 // Configurer SendGrid
 sgMail.setApiKey(process.env.SENDGRID_API_SECRET);
@@ -372,7 +360,15 @@ async function processVoicemail(payload) {
 
     } catch (err) {
         console.error("💥 Erreur serveur pendant le traitement lourd:", err.message);
-        // Alertes ici
+        logServerError("processVoicemail", err.message, err.stack);
+        try {
+            await sgMail.send({
+                to: "cbecker.piaf@gmail.com",
+                from: "louis.becker@student-cs.fr",
+                subject: "🚨 PitCall — Erreur serveur",
+                html: `<p><strong>Route :</strong> processVoicemail</p><p><strong>Message :</strong> ${err.message}</p><pre style="font-size:12px;color:#666;">${err.stack}</pre>`
+            });
+        } catch {}
     }
 }
 
@@ -599,6 +595,21 @@ app.post("/missed-call-email", async (req, res) => {
     } catch (err) {
         console.error("❌ Erreur dans le traitement de l'état de l'appel:", err.message);
     }
+});
+
+// --- Handler d'erreurs Express global ---
+app.use(async (err, req, res, next) => {
+    console.error("💥 Erreur Express non gérée:", err.message);
+    logServerError(req.path, err.message, err.stack);
+    try {
+        await sgMail.send({
+            to: "cbecker.piaf@gmail.com",
+            from: "louis.becker@student-cs.fr",
+            subject: "🚨 PitCall — Erreur serveur",
+            html: `<p><strong>Route :</strong> ${req.method} ${req.path}</p><p><strong>Message :</strong> ${err.message}</p><pre style="font-size:12px;color:#666;">${err.stack}</pre>`
+        });
+    } catch {}
+    if (!res.headersSent) res.status(500).json({ error: "Erreur interne." });
 });
 
 // ✅ Démarrage du serveur

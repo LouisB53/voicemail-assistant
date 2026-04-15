@@ -41,12 +41,15 @@ router.get("/dashboard", (req, res) => {
   });
 });
 
-// GET /api/reports?period=week|month|quarter|year
+// GET /api/reports?period=week|month|quarter|year[&garage=id]
 router.get("/reports", (req, res) => {
   const period = ["week", "month", "quarter", "year"].includes(req.query.period)
     ? req.query.period
     : "week";
-  const data = getReportKpis(req.user.garage_id, period);
+  const garageId = (req.user.role === 'admin' && req.query.garage)
+    ? req.query.garage
+    : req.user.garage_id;
+  const data = getReportKpis(garageId, period);
   res.json({ period, ...data });
 });
 

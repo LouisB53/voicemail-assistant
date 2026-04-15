@@ -7,7 +7,10 @@ router.use(requireAuth);
 
 // GET /api/contacts
 router.get("/contacts", (req, res) => {
-  const contacts = getContacts(req.user.garage_id);
+  const garageId = (req.user.role === 'admin' && req.query.garage)
+    ? req.query.garage
+    : req.user.garage_id;
+  const contacts = getContacts(garageId);
   res.json(contacts);
 });
 
