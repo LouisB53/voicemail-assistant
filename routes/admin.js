@@ -24,7 +24,7 @@ router.use(requireAdmin);
 
 // GET /api/admin/garages
 router.get("/garages", (req, res) => {
-  const garages = Object.values(GARAGES).map(g => ({ id: g.id, name: g.name }));
+  const garages = Object.values(GARAGES).map(g => ({ id: g.name, name: g.name }));
   res.json(garages);
 });
 
