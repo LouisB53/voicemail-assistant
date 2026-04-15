@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PitCall — Contacts</title>
+  <style>
+    :root {
+      --bg: #f6f6f1;
+      --surface: #ffffff;
+      --text: #1a1a1a;
+      --text-2: #404040;
+      --muted: #737373;
+      --border: #e5e5e0;
+      --border-2: #d1d1cb;
+      --accent: #1d4ed8;
+      --blue: #1d4ed8;
+      --blue-dark: #1e40af;
+      --blue-soft: #eff6ff;
+      --green: #16a34a;
+      --green-soft: #f0fdf4;
+      --red: #dc2626;
+      --red-soft: #fef2f2;
+      --orange: #d97706;
+      --orange-soft: #fffbeb;
+      --radius: 8px;
+      --shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 14px;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── NAV ── */
+    nav {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 32px;
+      height: 112px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .nav-left { display: flex; align-items: center; gap: 40px; }
+    .nav-brand { display: flex; align-items: center; }
+    .nav-logo-img {
+      height: 52px;
+      width: auto;
+      mix-blend-mode: multiply;
+      display: block;
+    }
+    .nav-links { display: flex; gap: 4px; }
+    .nav-link {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 16px;
+      font-weight: 500;
+      padding: 8px 16px;
+      border-radius: 8px;
+      transition: color 0.12s, background 0.12s;
+    }
+    .nav-link:hover { color: var(--text); background: var(--bg); }
+    .nav-link.active { color: var(--text); font-weight: 600; }
+    .nav-right { display: flex; align-items: center; gap: 14px; }
+    .nav-user { font-size: 16px; font-weight: 600; color: var(--text); }
+    .nav-garage { font-size: 13px; color: var(--muted); }
+    .btn-nav {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-2);
+      padding: 9px 18px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 15px;
+      transition: background 0.12s, border-color 0.12s;
+    }
+    .btn-nav:hover { background: var(--bg); border-color: var(--border-2); }
+    .btn-logout { color: var(--muted); }
+    .btn-logout:hover { color: var(--red); border-color: #fecaca; background: var(--red-soft); }
+
+    /* ── LAYOUT ── */
+    .container { max-width: 1100px; width: 100%; margin: 0 auto; padding: 24px; flex: 1; }
+
+    /* ── PAGE HEADER ── */
+    .page-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    .page-header h1 { font-size: 18px; font-weight: 700; color: var(--text); }
+    .page-header p { font-size: 13px; color: var(--muted); margin-top: 3px; }
+
+    /* ── KPI ── */
+    .kpi-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 20px; }
+    .kpi-card { background: var(--surface); border-radius: var(--radius); padding: 18px 20px; border: 1px solid var(--border); }
+    .kpi-label { font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); margin-bottom: 8px; }
+    .kpi-value { font-size: 28px; font-weight: 700; line-height: 1; color: var(--text); }
+    .kpi-sub { font-size: 11px; color: var(--muted); margin-top: 5px; }
+
+    /* ── TOOLBAR ── */
+    .toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+    .toolbar-title { font-size: 20px; font-weight: 700; flex: 1; }
+    input[type=text] {
+      padding: 7px 12px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      font-size: 13px;
+      background: white;
+      color: var(--text);
+      outline: none;
+      width: 260px;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    input[type=text]:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--blue-soft); }
+    .filter-toggle {
+      display: flex;
+      gap: 2px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 3px;
+    }
+    .filter-toggle button {
+      padding: 4px 12px;
+      border: none;
+      background: transparent;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 12px;
+      color: var(--muted);
+      transition: all 0.12s;
+      white-space: nowrap;
+    }
+    .filter-toggle button.active {
+      background: white;
+      color: var(--text);
+      font-weight: 600;
+      box-shadow: var(--shadow);
+    }
+
+    /* ── BTN PRIMARY ── */
+    .btn-primary {
+      background: var(--accent);
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 7px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: opacity 0.12s;
+    }
+    .btn-primary:hover { opacity: 0.9; }
+
+    /* ── TABLE ── */
+    .table-wrap {
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      overflow: hidden;
+    }
+    table { width: 100%; border-collapse: collapse; }
+    thead tr { background: var(--bg); border-bottom: 1px solid var(--border); }
+    thead th {
+      padding: 10px 16px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    tbody tr { border-bottom: 1px solid var(--border); transition: background 0.1s; }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: #fafaf7; }
+    td { padding: 12px 16px; font-size: 13px; vertical-align: middle; }
+    .td-name { font-weight: 600; color: var(--text); }
+    .td-phone { color: var(--muted); font-size: 12px; font-family: monospace; }
+    .td-date { color: var(--muted); font-size: 12px; white-space: nowrap; }
+
+    /* ── BADGES ── */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      padding: 2px 8px;
+      border-radius: 5px;
+      font-size: 11px;
+      font-weight: 500;
+      white-space: nowrap;
+      border: 1px solid transparent;
+    }
+    .badge-manual { background: var(--blue-soft); color: var(--blue-dark); border-color: #bfdbfe; }
+    .badge-auto { background: var(--green-soft); color: var(--green); border-color: #bbf7d0; }
+
+    /* ── ACTIONS ── */
+    .td-actions { display: flex; gap: 6px; }
+    .btn-action {
+      padding: 4px 11px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--muted);
+      transition: all 0.12s;
+      white-space: nowrap;
+    }
+    .btn-action:hover { border-color: var(--border-2); color: var(--text-2); background: var(--bg); }
+    .btn-action.validate { border-color: #bbf7d0; color: var(--green); background: var(--green-soft); }
+    .btn-action.validate:hover { background: #dcfce7; border-color: #86efac; }
+    .btn-action.delete:hover { border-color: #fecaca; color: var(--red); background: var(--red-soft); }
+
+    /* ── MODAL ── */
+    .modal-overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.3);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-overlay.visible { display: flex; }
+    .modal {
+      background: white;
+      border-radius: 10px;
+      padding: 24px;
+      width: 100%;
+      max-width: 420px;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.14);
+      border: 1px solid var(--border);
+    }
+    .modal h3 { font-size: 15px; font-weight: 600; margin-bottom: 18px; }
+    .field { margin-bottom: 14px; }
+    label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 5px; color: var(--text); }
+    .modal input {
+      width: 100%;
+      padding: 9px 12px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      font-size: 14px;
+      font-family: inherit;
+      outline: none;
+      color: var(--text);
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .modal input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--blue-soft); }
+    .modal-hint { font-size: 12px; color: var(--muted); margin-top: 5px; }
+    .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; }
+    .btn-cancel {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-2);
+      padding: 8px 16px;
+      border-radius: 7px;
+      cursor: pointer;
+      font-size: 13px;
+      transition: background 0.12s;
+    }
+    .btn-cancel:hover { background: var(--bg); }
+    .btn-save {
+      background: var(--accent);
+      color: white;
+      border: none;
+      padding: 8px 18px;
+      border-radius: 7px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      transition: opacity 0.12s;
+    }
+    .btn-save:hover { opacity: 0.9; }
+    .modal-error { color: var(--red); font-size: 12px; margin-top: 10px; display: none; }
+
+    /* ── EMPTY ── */
+    .empty { text-align: center; padding: 56px 20px; color: var(--muted); font-size: 13px; }
+    .empty .icon { font-size: 28px; margin-bottom: 10px; }
+
+    /* ── FOOTER ── */
+    .site-footer {
+      border-top: 1px solid var(--border);
+      margin-top: 40px;
+      padding: 18px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .footer-left { font-size: 12px; color: var(--muted); }
+    .footer-right { display: flex; align-items: center; gap: 20px; }
+    .footer-contact { font-size: 12px; color: var(--muted); }
+    .footer-contact a { color: var(--muted); text-decoration: none; }
+    .footer-contact a:hover { color: var(--text); }
+    .footer-sep { color: var(--border); }
+  </style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-left">
+    <div class="nav-brand">
+      <img src="/logo.png" alt="PitCall" class="nav-logo-img">
+    </div>
+    <div class="nav-links">
+      <a class="nav-link" href="/dashboard.html">Tableau de bord</a>
+      <a class="nav-link active" href="/contacts.html">Contacts</a>
+      <a class="nav-link" href="/reports.html">Rapports</a>
+    </div>
+  </div>
+  <div class="nav-right">
+    <div style="text-align:right;">
+      <div class="nav-user" id="nav-user-name">—</div>
+      <div class="nav-garage" id="nav-garage-id">—</div>
+    </div>
+    <button class="btn-nav btn-logout" onclick="logout()">Déconnexion</button>
+  </div>
+</nav>
+
+<!-- Modal ajout / édition -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal">
+    <h3 id="modal-title">Ajouter un contact</h3>
+    <div class="field">
+      <label for="modal-name">Nom</label>
+      <input type="text" id="modal-name" placeholder="Jean Dupont" autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="modal-phone">Numéro de téléphone</label>
+      <input type="text" id="modal-phone" placeholder="+33612345678" autocomplete="off">
+      <p class="modal-hint">Format international recommandé : +336XXXXXXXX</p>
+    </div>
+    <div class="modal-error" id="modal-error"></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal()">Annuler</button>
+      <button class="btn-save" onclick="saveContact()">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+
+  <div class="page-header">
+    <div>
+      <h1>Carnet de contacts</h1>
+      <p>Gérez vos contacts clients. Les noms sont automatiquement enrichis depuis les messages vocaux.</p>
+    </div>
+    <button class="btn-primary" onclick="openAddModal()">+ Ajouter un contact</button>
+  </div>
+
+  <!-- KPIs -->
+  <div class="kpi-grid">
+    <div class="kpi-card">
+      <div class="kpi-label">Total contacts</div>
+      <div class="kpi-value" id="kpi-total">—</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Ajoutés manuellement</div>
+      <div class="kpi-value" id="kpi-manual">—</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Détectés automatiquement</div>
+      <div class="kpi-value" id="kpi-auto">—</div>
+      <div class="kpi-sub">à valider</div>
+    </div>
+  </div>
+
+  <!-- TOOLBAR -->
+  <div class="toolbar">
+    <span class="toolbar-title">Liste des contacts</span>
+    <input type="text" id="search" placeholder="Rechercher un nom ou numéro…" oninput="renderTable()">
+    <div class="filter-toggle">
+      <button class="active" onclick="setFilter('all', this)">Tous</button>
+      <button onclick="setFilter('manual', this)">Manuels</button>
+      <button onclick="setFilter('auto', this)">Auto</button>
+    </div>
+  </div>
+
+  <!-- TABLE -->
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Nom</th>
+          <th>Numéro</th>
+          <th>Source</th>
+          <th>Dernier appel</th>
+          <th>Ajouté le</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="contacts-tbody">
+        <tr><td colspan="6"><div class="empty"><div class="icon">⏳</div><p>Chargement…</p></div></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+<footer class="site-footer">
+  <div class="footer-left">© 2025 PitCall &nbsp;·&nbsp; v1.0.0</div>
+  <div class="footer-right">
+    <span class="footer-contact">Support : <a href="mailto:louis.becker@pitcall.fr">louis.becker@pitcall.fr</a></span>
+    <span class="footer-sep">|</span>
+    <span class="footer-contact"><a href="tel:+33637760448">06 37 76 04 48</a></span>
+  </div>
+</footer>
+
+<script>
+  const TOKEN_KEY = 'pitcall_token';
+  let allContacts = [];
+  let currentFilter = 'all';
+  let editingId = null;
+
+  function getToken() { return localStorage.getItem(TOKEN_KEY); }
+
+  function logout() {
+    localStorage.removeItem(TOKEN_KEY);
+    window.location.href = '/login.html';
+  }
+
+  async function apiFetch(url, options = {}) {
+    const res = await fetch(url, {
+      ...options,
+      headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json', ...(options.headers || {}) },
+    });
+    if (res.status === 401) { logout(); throw new Error('Non authentifié'); }
+    return res;
+  }
+
+  async function checkAuth() {
+    const token = getToken();
+    if (!token) { window.location.href = '/login.html'; return false; }
+    try {
+      const res = await apiFetch('/api/auth/me');
+      if (!res.ok) { logout(); return false; }
+      const data = await res.json();
+      document.getElementById('nav-user-name').textContent = data.user.display_name || data.user.username;
+      document.getElementById('nav-garage-id').textContent = data.user.garage_id;
+      return true;
+    } catch { logout(); return false; }
+  }
+
+  async function loadContacts() {
+    try {
+      const res = await apiFetch('/api/contacts');
+      allContacts = await res.json();
+      updateKpis();
+      renderTable();
+    } catch(e) { console.error(e); }
+  }
+
+  function updateKpis() {
+    document.getElementById('kpi-total').textContent = allContacts.length;
+    document.getElementById('kpi-manual').textContent = allContacts.filter(c => c.source === 'manual').length;
+    document.getElementById('kpi-auto').textContent = allContacts.filter(c => c.source === 'auto').length;
+  }
+
+  function setFilter(f, btn) {
+    currentFilter = f;
+    document.querySelectorAll('.filter-toggle button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    renderTable();
+  }
+
+  function formatDate(iso) {
+    if (!iso) return '—';
+    const d = new Date(iso.replace(' ', 'T') + (iso.includes('T') ? '' : 'Z'));
+    return d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' });
+  }
+
+  function renderTable() {
+    const search = document.getElementById('search').value.toLowerCase();
+    let filtered = allContacts.filter(c => {
+      if (currentFilter === 'manual' && c.source !== 'manual') return false;
+      if (currentFilter === 'auto' && c.source !== 'auto') return false;
+      if (search) {
+        const hay = [c.name, c.phone_number].join(' ').toLowerCase();
+        if (!hay.includes(search)) return false;
+      }
+      return true;
+    });
+
+    const tbody = document.getElementById('contacts-tbody');
+    if (filtered.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="6"><div class="empty"><div class="icon">📋</div><p>Aucun contact trouvé.<br>Ajoutez votre premier contact avec le bouton ci-dessus.</p></div></td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = filtered.map(c => `
+      <tr>
+        <td class="td-name">${escHtml(c.name)}</td>
+        <td class="td-phone">${escHtml(c.phone_number)}</td>
+        <td><span class="badge badge-${c.source}">${c.source === 'manual' ? 'Manuel' : 'Auto — à valider'}</span></td>
+        <td class="td-date">${formatDate(c.last_call_at)}</td>
+        <td class="td-date">${formatDate(c.created_at)}</td>
+        <td>
+          <div class="td-actions">
+            ${c.source === 'auto' ? `<button class="btn-action validate" onclick="validateContact(${c.id}, '${escHtml(c.name)}')">Valider</button>` : ''}
+            <button class="btn-action" onclick="openEditModal(${c.id}, '${escHtml(c.name)}', '${escHtml(c.phone_number)}')">Modifier</button>
+            <button class="btn-action delete" onclick="deleteContact(${c.id}, '${escHtml(c.name)}')">Supprimer</button>
+          </div>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  function escHtml(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+
+  // --- MODAL ---
+
+  function openAddModal() {
+    editingId = null;
+    document.getElementById('modal-title').textContent = 'Ajouter un contact';
+    document.getElementById('modal-name').value = '';
+    document.getElementById('modal-phone').value = '';
+    document.getElementById('modal-error').style.display = 'none';
+    document.getElementById('modal-overlay').classList.add('visible');
+    document.getElementById('modal-name').focus();
+  }
+
+  function openEditModal(id, name, phone) {
+    editingId = id;
+    document.getElementById('modal-title').textContent = 'Modifier le contact';
+    document.getElementById('modal-name').value = name;
+    document.getElementById('modal-phone').value = phone;
+    document.getElementById('modal-error').style.display = 'none';
+    document.getElementById('modal-overlay').classList.add('visible');
+    document.getElementById('modal-name').focus();
+  }
+
+  function closeModal() {
+    document.getElementById('modal-overlay').classList.remove('visible');
+    editingId = null;
+  }
+
+  async function saveContact() {
+    const name = document.getElementById('modal-name').value.trim();
+    const phone = document.getElementById('modal-phone').value.trim();
+    const errEl = document.getElementById('modal-error');
+    errEl.style.display = 'none';
+
+    if (!name || !phone) {
+      errEl.textContent = 'Nom et numéro requis.';
+      errEl.style.display = 'block';
+      return;
+    }
+
+    try {
+      let res;
+      if (editingId) {
+        res = await apiFetch(`/api/contacts/${editingId}`, {
+          method: 'PUT',
+          body: JSON.stringify({ name, phone_number: phone }),
+        });
+      } else {
+        res = await apiFetch('/api/contacts', {
+          method: 'POST',
+          body: JSON.stringify({ name, phone_number: phone }),
+        });
+      }
+
+      if (!res.ok) {
+        const data = await res.json();
+        errEl.textContent = data.error || 'Erreur lors de l\'enregistrement.';
+        errEl.style.display = 'block';
+        return;
+      }
+
+      closeModal();
+      await loadContacts();
+    } catch(e) {
+      errEl.textContent = 'Erreur réseau.';
+      errEl.style.display = 'block';
+    }
+  }
+
+  async function validateContact(id, name) {
+    try {
+      await apiFetch(`/api/contacts/${id}/validate`, { method: 'POST' });
+      await loadContacts();
+    } catch(e) { console.error(e); }
+  }
+
+  async function deleteContact(id, name) {
+    if (!confirm(`Supprimer le contact "${name}" ?`)) return;
+    try {
+      await apiFetch(`/api/contacts/${id}`, { method: 'DELETE' });
+      await loadContacts();
+    } catch(e) { console.error(e); }
+  }
+
+  // Fermer modal en cliquant l'overlay
+  document.getElementById('modal-overlay').addEventListener('click', e => {
+    if (e.target === document.getElementById('modal-overlay')) closeModal();
+  });
+
+  // Valider avec Entrée dans le modal
+  document.getElementById('modal-overlay').addEventListener('keydown', e => {
+    if (e.key === 'Enter') saveContact();
+    if (e.key === 'Escape') closeModal();
+  });
+
+  // Init
+  checkAuth().then(ok => { if (ok) loadContacts(); });
+</script>
+</body>
+</html>

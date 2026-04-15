@@ -8,7 +8,10 @@ import fs from "fs";
 import dotenv from "dotenv";
 // Import de l'extracteur GPT et des utilitaires nécessaires
 import { extractInfoGPT } from "./utils/gpt-extractor.js"; 
-import { saveCall, saveMessage, getAllCalls, getRecentCalls } from "./db.js"; // Assurez-vous que la BDD est accessible
+import { saveCall, saveMessage, getAllCalls, getRecentCalls, getGarageSettings, upsertAutoContact, getContactByPhone } from "./db.js";
+import authRouter from "./routes/auth.js";
+import dashboardRouter from "./routes/dashboard.js";
+import contactsRouter from "./routes/contacts.js";
 import { escapeHtml, normalizePhone } from "./utils/extractors.js";
 import { DateTime } from "luxon";
 import Twilio from "twilio"; // Ajout de Twilio pour la gestion API
@@ -26,6 +29,14 @@ const twilioClient = Twilio(process.env.ACCOUNT_SID, process.env.AUTH_TOKEN);
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(express.text({ type: "*/*" }));
+
+// Interface web statique
+app.use(express.static("public"));
+
+// Routes API
+app.use("/api/auth", authRouter);
+app.use("/api", dashboardRouter);
+app.use("/api", contactsRouter);
 
 // --- DÉBUT DU BLOC MODIFIÉ POUR LA SÉCURITÉ ET AZURE APP SERVICE ---
 
@@ -70,12 +81,27 @@ function toParisTime(rawDate) {
 
 // --- FIN DU BLOC MODIFIÉ ---
 
+// Garde anti-doublon : empêche de traiter deux fois le même enregistrement
+const _processingKeys = new Set();
+
 /**
  * ⚙️ Fonction de Traitement Lourd Asynchrone (Whisper, GPT, Email)
  * Cette fonction est appelée sans "await" par la route Twilio.
  */
 async function processVoicemail(payload) {
     let { RecordingSid, From, To, CallSid, CallStatus, RecordingDuration } = payload;
+
+    // Dédupliquer : si cet enregistrement est déjà en cours / déjà traité, on ignore
+    const dedupKey = RecordingSid || CallSid;
+    if (dedupKey && _processingKeys.has(dedupKey)) {
+        console.warn(`⏭️ Doublon ignoré : ${dedupKey} déjà en cours de traitement.`);
+        return;
+    }
+    if (dedupKey) {
+        _processingKeys.add(dedupKey);
+        // Nettoyage après 10 min pour éviter une fuite mémoire
+        setTimeout(() => _processingKeys.delete(dedupKey), 10 * 60 * 1000);
+    }
     
     // Remplacement de CallDuration par RecordingDuration (qui est présent dans le payload)
     const durationSeconds = parseInt(RecordingDuration, 10) || 0; 
@@ -125,18 +151,45 @@ async function processVoicemail(payload) {
             `;
         }
         
+        // Enrichir avec le carnet de contacts
+        const missedContact = getContactByPhone(garage.name, From);
+        let missedCallerHtml, missedSubject;
+        if (missedContact?.source === "manual") {
+            missedCallerHtml = `${escapeHtml(missedContact.name)} (${From})`;
+            missedSubject = `📞 Appel manqué sans message de ${missedContact.name} (${From})`;
+        } else if (missedContact?.source === "auto") {
+            missedCallerHtml = `${escapeHtml(missedContact.name)} (${From}) <span style="font-size:0.85em;color:#999;">(à valider)</span>`;
+            missedSubject = `📞 Appel manqué sans message de ${missedContact.name} - à valider (${From})`;
+        } else {
+            missedCallerHtml = escapeHtml(From);
+            missedSubject = `📞 Appel manqué sans message de ${From}`;
+        }
+
         await sgMail.send({
             to: garage.to_email,
             bcc: BCC_MONITOR,
             from: garage.from_email,
-            subject: `📞 Appel manqué sans message de ${From}`,
+            subject: missedSubject,
             html: `
-                <p><strong>Appelant :</strong> ${From}</p>
+                <p><strong>Appelant :</strong> ${missedCallerHtml}</p>
                 <p>Aucun message n’a été laissé (ou message vide).</p>
                 ${historyHtml}
             `
         });
-        return; 
+
+        saveCall({
+            call_sid: RecordingSid || CallSid,
+            from_number: From,
+            to_number: To,
+            start_time: new Date().toISOString(),
+            end_time: new Date().toISOString(),
+            duration: durationSeconds,
+            status: "missed",
+            has_message: 0,
+            garage_id: garage.name
+        });
+
+        return;
     }
 
     let transcript = "(transcription indisponible)";
@@ -200,16 +253,28 @@ async function processVoicemail(payload) {
         const priorityTag = is_urgent ? "🚨 URGENT" : "";
         const tagLine = [priorityTag].filter(Boolean).join(" ");
 
-        // Utilisation de motive_legend dans l'objet et motive_details dans l'en-tête
-        // 💡 MODIFICATION: Utilisation de motive_legend dans le sujet pour la catégorisation stricte
-        const subject = `📞 [${motive_legend.toUpperCase()}] ${name} (${fromPhone}) - ${date_preference} ${tagLine ? "· " + tagLine : ""}`;
+        // Enrichir le nom avec le carnet de contacts (priorité sur le nom GPT)
+        const voiceContact = getContactByPhone(garage.name, From);
+        let callerDisplayText, callerDisplayHtml;
+        if (voiceContact?.source === "manual") {
+            callerDisplayText = `${voiceContact.name} (${fromPhone})`;
+            callerDisplayHtml = `${escapeHtml(voiceContact.name)} (${fromPhone})`;
+        } else if (voiceContact?.source === "auto") {
+            callerDisplayText = `${voiceContact.name} - a valider (${fromPhone})`;
+            callerDisplayHtml = `${escapeHtml(voiceContact.name)} (${fromPhone}) <span style="font-size:0.85em;color:#999;">(a valider)</span>`;
+        } else {
+            callerDisplayText = `${name} (${fromPhone})`;
+            callerDisplayHtml = `${escapeHtml(name)} (${fromPhone})`;
+        }
+
+        const subject = `📞 [${motive_legend.toUpperCase()}] ${callerDisplayText} - ${date_preference} ${tagLine ? "· " + tagLine : ""}`;
 
         const summaryLines = [
-            priorityTag && `**${priorityTag}**`, // Affiche l'urgence si nécessaire
-            `**Catégorie :** ${motive_legend}`, // 💡 MODIFICATION: Afficher la catégorie stricte
-            `**Motif détaillé :** ${motive_details}`, // Afficher les détails concis
+            priorityTag && `**${priorityTag}**`,
+            `**Catégorie :** ${motive_legend}`,
+            `**Motif détaillé :** ${motive_details}`,
             `**Date souhaitée :** ${date_preference}`,
-            `**Appelant :** ${name} (${fromPhone})`,
+            // Ligne Appelant gérée séparément (HTML enrichi)
             plate_number && `**Immatriculation :** ${plate_number}`,
             `—`,
             `Rappel rapide recommandé.`,
@@ -237,13 +302,13 @@ async function processVoicemail(payload) {
                 ${summaryLines.map(l => {
                     if (l === "—") return '<hr style="border:none;border-top:1px solid #ddd;margin:12px 0;">';
                     const clean = escapeHtml(l.replace(/\*\*/g, ''));
-                    // Logique pour mettre en gras le titre de chaque ligne (ex: "Catégorie :")
                     const match = clean.match(/^([^:]+):\s*(.*)/);
                     if (match) {
                         return `<p style="margin:0 0 4px 0;"><strong>${match[1]}:</strong> ${match[2]}</p>`;
                     }
                     return `<p style="margin:0 0 4px 0;"><strong>${clean}</strong></p>`;
                 }).join('')}
+                <p style="margin:0 0 4px 0;"><strong>Appelant :</strong> ${callerDisplayHtml}</p>
                 <p style="margin:14px 0 4px 0;"><strong>Transcription :</strong></p>
                 <p style="margin:0; padding-left:10px; border-left:3px solid #ccc;">
                     ${escapeHtml(transcript).replace(/\n+/g, '<br>').replace(/([.?!])\s/g, '$1&nbsp;')}
@@ -290,12 +355,14 @@ async function processVoicemail(payload) {
             garage_id: garage.name,
             from_number: From,
             transcript: transcript,
-            // 💡 MODIFICATION: Sauvegarde de l'objet gptAnalysis complet et mis à jour
             analysis: JSON.stringify(gptAnalysis),
             sent_at: new Date().toISOString()
         });
 
-        // --- 9. SUPPRESSION RGPD DE L'ENREGISTREMENT ---
+        // --- 9. Mise à jour automatique du carnet de contacts ---
+        upsertAutoContact(garage.name, From, name);
+
+        // --- 10. SUPPRESSION RGPD DE L'ENREGISTREMENT ---
         try {
             await twilioClient.recordings(RecordingSid).remove();
             console.log(`✅ Enregistrement Twilio ${RecordingSid} supprimé pour des raisons RGPD.`);
@@ -360,8 +427,10 @@ app.post("/email-voicemail", async (req, res) => {
     res.send('<Response><Hangup/></Response>');
 
     // 🚀 Déclenchement Asynchrone : On lance le travail lourd sans bloquer la route
-    processVoicemail(payload);
-    
+    processVoicemail(payload).catch(err =>
+        console.error("💥 Erreur non gérée dans processVoicemail:", err.message)
+    );
+
     // La route se termine ici immédiatement.
 });
 
@@ -382,9 +451,13 @@ app.get("/health", (req, res) => {
 });
 
 // Route d'exportation des données (pour le débogage ou l'analyse)
-app.get("/export", async (req, res) => {
+app.get("/export", (req, res) => {
+    const secret = process.env.EXPORT_SECRET;
+    if (!secret || req.query.key !== secret) {
+        return res.status(401).json({ error: "Non autorisé." });
+    }
     try {
-        const calls = await getAllCalls(); // Assurez-vous que cette fonction est implémentée dans db.js
+        const calls = getAllCalls();
         res.setHeader('Content-Type', 'application/json');
         res.setHeader('Content-Disposition', 'attachment; filename="calls_export.json"');
         res.status(200).send(JSON.stringify(calls, null, 2));
@@ -399,40 +472,19 @@ app.get("/export", async (req, res) => {
 // --------------------------------------------------------------------------------
 
 
-// --- ROUTE TWIML POUR ENREGISTREMENT FIABLE ---
-app.post("/twiml/voicemail/:to", async (req, res) => {
-    try {
-        const to = decodeURIComponent(req.params.to);
-        const garage = GARAGES[to];
-
-        if (!garage) {
-            console.warn(`⚠️ Numéro Twilio inconnu pour route TwiML : ${to}`);
-            return res.type("text/xml").send(`<Response><Say>Numéro de garage inconnu. Merci de réessayer plus tard.</Say></Response>`);
-        }
-
-        // 💡 Assurez-vous que cette URL est l'adresse publique de la route ASYNCHRONE !
-        const callbackUrl = process.env.PUBLIC_SERVER_URL + "/email-voicemail"; 
-
-        res.type("text/xml");
-        res.send(`
-            <Response>
-                <Say language="fr-FR" voice="alice">Merci, laissez votre message après le bip.</Say>
-                <Record
-                    maxLength="120"
-                    playBeep="true"
-                    trim="trim-silence"
-                    action="${callbackUrl}"
-                    method="POST"
-                />
-                <Say language="fr-FR" voice="alice">Au revoir.</Say>
-                <Hangup/>
-            </Response>
-        `);
-    } catch (err) {
-        console.error("💥 Erreur dans /twiml/voicemail :", err.message);
-        res.type("text/xml").send(`<Response><Say>Erreur interne, désolé.</Say></Response>`);
-    }
+// --- ROUTE PUBLIQUE : statut du garage (appelée par le Studio Flow Twilio) ---
+app.get("/twiml/status", (req, res) => {
+    let to = (req.query.to || "").trim().replace(/\s+/g, "");
+    if (!to.startsWith("+")) to = "+" + to;
+    const garage = GARAGES[to];
+    if (!garage) return res.status(404).json({ error: "Garage inconnu" });
+    const settings = getGarageSettings(garage.name);
+    res.json({
+        is_closed: settings.is_closed ? 1 : 0,
+        closed_message: settings.closed_message || "Le garage est actuellement fermé. Merci de rappeler pendant nos horaires d'ouverture."
+    });
 });
+
 
 // --- NOUVELLE ROUTE : GESTION DES CHANGEMENTS DE STATUT D'APPEL ---
 app.post("/missed-call-email", async (req, res) => {
