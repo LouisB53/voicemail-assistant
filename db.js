@@ -157,7 +157,7 @@ export function getAdminCalls(garageId = null, limit = 200) {
       c.id, c.call_sid, c.from_number, c.garage_id, c.has_message,
       c.duration, c.status, c.created_at,
       c.recalled_at, c.recalled_by,
-      m.analysis,
+      m.transcript, m.analysis,
       ct.name  AS contact_name,
       ct.source AS contact_source
     FROM calls c
@@ -306,22 +306,24 @@ export function getReportKpis(garageId, period = "week") {
   const daysMap = { week: 7, month: 30, quarter: 90, year: 365 };
   const days = daysMap[period] || 7;
   const since = `-${days} days`;
+  const garageWhere = garageId ? 'AND garage_id = ?' : '';
+  const garageParams = garageId ? [garageId] : [];
 
   const calls = db.prepare(`
     SELECT from_number, has_message, recalled_at
     FROM calls
-    WHERE garage_id = ?
-      AND status NOT LIKE 'blocked%'
+    WHERE status NOT LIKE 'blocked%'
       AND created_at > datetime('now', ?)
-  `).all(garageId, since);
+      ${garageWhere}
+  `).all(since, ...garageParams);
 
   const messages = db.prepare(`
     SELECT m.analysis
     FROM messages m
     JOIN calls c ON c.call_sid = m.call_sid
-    WHERE c.garage_id = ?
-      AND c.created_at > datetime('now', ?)
-  `).all(garageId, since);
+    WHERE c.created_at > datetime('now', ?)
+      ${garageWhere.replace('garage_id', 'c.garage_id')}
+  `).all(since, ...garageParams);
 
   const total = calls.length;
   const withMessage = calls.filter(c => c.has_message === 1).length;
@@ -436,6 +438,18 @@ export function getContactByPhone(garageId, phoneNumber) {
 
 export function deleteContact(id, garageId) {
   return db.prepare(`DELETE FROM contacts WHERE id = ? AND garage_id = ?`).run(id, garageId);
+}
+
+export function exportContacts(garageId = null) {
+  const where = garageId ? 'WHERE c.garage_id = ?' : '';
+  const params = garageId ? [garageId] : [];
+  return db.prepare(`
+    SELECT c.garage_id, c.name, c.phone_number, c.source, c.created_at,
+      (SELECT calls.created_at FROM calls WHERE calls.from_number = c.phone_number AND calls.garage_id = c.garage_id ORDER BY calls.created_at DESC LIMIT 1) as last_call_at
+    FROM contacts c
+    ${where}
+    ORDER BY c.garage_id, c.name ASC
+  `).all(...params);
 }
 
 // Valider un contact auto → le passe définitivement en 'manual'

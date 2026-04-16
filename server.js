@@ -20,8 +20,6 @@ import Twilio from "twilio"; // Ajout de Twilio pour la gestion API
 
 dotenv.config();
 
-const BCC_MONITOR = "louis.becker0503@gmail.com";
-
 const app = express();
 
 // Configuration Twilio
@@ -155,7 +153,6 @@ async function processVoicemail(payload) {
 
         await sgMail.send({
             to: garage.to_email,
-            bcc: BCC_MONITOR,
             from: garage.from_email,
             subject: missedSubject,
             html: `
@@ -307,7 +304,6 @@ async function processVoicemail(payload) {
 
         await sgMail.send({
             to: garage.to_email,
-            bcc: BCC_MONITOR,
             from: garage.from_email,
             subject,
             html,
@@ -569,7 +565,6 @@ app.post("/missed-call-email", async (req, res) => {
         // Envoi de l'email d'appel manqué
         await sgMail.send({
             to: garage.to_email,
-            bcc: BCC_MONITOR,
             from: garage.from_email,
             subject: `📞 Appel manqué sans message de ${From}`,
             html: `

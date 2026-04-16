@@ -280,6 +280,34 @@
     .footer-sep { color: var(--border); }
 
     .loading-state { text-align: center; padding: 48px; color: var(--muted); font-size: 14px; }
+
+    /* ── EXPAND ROWS ── */
+    tbody tr.data-row { cursor: pointer; }
+    tbody tr.data-row:hover { background: #fafaf7; }
+    tbody tr.expanded { background: #fafaf7; }
+    tr.expand-row td { padding: 0; }
+    .expand-content {
+      display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px;
+      padding: 16px 20px; background: #fafaf7;
+      border-top: 1px solid var(--border);
+    }
+    .expand-section h4 { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); margin-bottom: 10px; }
+    .detail-grid { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; align-items: baseline; }
+    .detail-key { font-size: 12px; color: var(--muted); white-space: nowrap; }
+    .detail-val { font-size: 12px; color: var(--text-2); }
+    .detail-val.urgent { color: var(--red); font-weight: 600; }
+    .expand-transcript {
+      grid-column: 1 / -1; background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 12px 14px; font-size: 13px; color: var(--text-2); line-height: 1.6;
+    }
+    .btn-sm {
+      padding: 6px 12px; font-size: 12px; font-weight: 500; border-radius: 7px; cursor: pointer;
+      border: 1px solid var(--border); background: var(--surface); color: var(--text-2);
+      transition: background 0.12s; white-space: nowrap;
+    }
+    .btn-sm:hover { background: var(--bg); border-color: var(--border-2); }
+    .btn-sm.export { border-color: var(--green); color: var(--green); background: var(--green-soft); }
+    .btn-sm.export:hover { background: #dcfce7; }
   </style>
 </head>
 <body>
@@ -315,8 +343,11 @@
 
     <!-- SECTION DASHBOARD -->
     <div id="section-dashboard">
-      <div class="garage-pills" id="garage-pills">
-        <div class="loading-state">Chargement…</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:20px">
+        <div class="garage-pills" id="garage-pills" style="margin-bottom:0;flex:1">
+          <div class="loading-state">Chargement…</div>
+        </div>
+        <button class="btn-sm" onclick="loadDashboard()" title="Actualiser">↻ Actualiser</button>
       </div>
       <div id="dashboard-content">
         <div class="loading-state">Chargement…</div>
@@ -435,6 +466,7 @@
       `).join('');
     }
 
+
     function selectGarage(garageId) {
       currentGarage = garageId;
       renderGaragePills();
@@ -484,6 +516,7 @@
         <div class="section-header">
           <div class="section-title">Tous les appels récents</div>
           <input type="text" id="search-input" placeholder="Rechercher…" oninput="filterTable(this.value)">
+          <button class="btn-sm export" onclick="exportCSV('calls')">⬇ Export CSV</button>
         </div>
         <div class="table-wrap">
           <table>
@@ -535,6 +568,7 @@
         <div class="section-header">
           <div class="section-title">Appels — ${garageName}</div>
           <input type="text" id="search-input" placeholder="Rechercher…" oninput="filterTable(this.value)">
+          <button class="btn-sm export" onclick="exportCSV('calls')">⬇ Export CSV</button>
         </div>
         <div class="table-wrap">
           <table>
@@ -557,17 +591,21 @@
     }
 
     function renderCallRows(calls, showGarage) {
+      const colspan = showGarage ? 7 : 6;
       if (!calls || calls.length === 0) {
-        return `<tr><td class="td-empty" colspan="${showGarage ? 7 : 6}">Aucun appel</td></tr>`;
+        return `<tr><td class="td-empty" colspan="${colspan}">Aucun appel</td></tr>`;
       }
       return calls.map(c => {
         const date = formatDate(c.created_at);
-        const num = c.from_number ? `<a href="tel:${c.from_number}">${formatPhone(c.from_number)}</a>` : '—';
+        const num = c.from_number
+          ? `<a href="tel:${c.from_number}" onclick="event.stopPropagation()">${formatPhone(c.from_number)}</a>`
+          : '—';
         const contact = c.contact_name
           ? `<span class="contact-name">${esc(c.contact_name)}</span>${c.contact_source === 'auto' ? ' <span class="contact-auto">(auto)</span>' : ''}`
           : '<span style="color:var(--muted)">—</span>';
-        const motif = c.analysis?.motive_legend
-          ? `<span style="font-size:12px;color:var(--text-2)">${esc(c.analysis.motive_legend)}</span>${c.analysis.is_urgent ? ' <span class="tag urgent">Urgent</span>' : ''}`
+        const a = c.analysis || {};
+        const motif = a.motive_legend
+          ? `<span style="font-size:12px;color:var(--text-2)">${esc(a.motive_legend)}</span>${a.is_urgent ? ' <span class="tag urgent">Urgent</span>' : ''}`
           : (c.has_message ? '<span style="color:var(--muted);font-size:12px">—</span>' : '');
         const recalled = c.recalled_at
           ? `<span class="tag recalled">✓ Rappelé</span><div style="font-size:10px;color:var(--muted);margin-top:2px">${esc(c.recalled_by || '')}</div>`
@@ -576,8 +614,9 @@
           ? '<span class="status-dot-sm green"></span>Message'
           : '<span class="status-dot-sm grey"></span>Pas de message';
         const garageTd = showGarage ? `<td><span class="tag garage">${esc(getGarageName(c.garage_id))}</span></td>` : '';
+        const expandHtml = buildExpandContent(c);
         return `
-          <tr data-search="${esc((c.from_number || '') + ' ' + (c.contact_name || '') + ' ' + (c.analysis?.motive_legend || '') + ' ' + (c.garage_id || ''))}">
+          <tr class="data-row${c.has_message ? '' : ''}" data-id="${c.id}" data-search="${esc((c.from_number || '') + ' ' + (c.contact_name || '') + ' ' + (a.motive_legend || '') + ' ' + (c.garage_id || ''))}" onclick="toggleExpand(${c.id})">
             <td style="white-space:nowrap;font-size:12px;color:var(--muted)">${date}</td>
             ${garageTd}
             <td class="td-number">${num}</td>
@@ -586,15 +625,84 @@
             <td>${recalled}</td>
             <td style="font-size:12px">${status}</td>
           </tr>
+          <tr class="expand-row" id="expand-${c.id}" style="display:none">
+            <td colspan="${colspan}">${expandHtml}</td>
+          </tr>
         `;
       }).join('');
     }
 
+    function buildExpandContent(c) {
+      if (!c.has_message) {
+        return `<div style="padding:10px 20px;color:var(--muted);font-size:13px">Pas de message pour cet appel.</div>`;
+      }
+      const a = c.analysis || {};
+      const detailItems = [];
+      if (a.motive_legend) detailItems.push(['Motif', esc(a.motive_legend)]);
+      if (a.motive_details && a.motive_details !== a.motive_legend) detailItems.push(['Détail', esc(a.motive_details)]);
+      if (a.plate_number && a.plate_number !== 'unknown') detailItems.push(['Immat.', esc(a.plate_number)]);
+      const callerName = a.caller_name || a.name || a.client_name || '';
+      if (callerName && !['inconnu','unknown','—','-',''].includes(callerName.toLowerCase())) detailItems.push(['Appelant', esc(callerName)]);
+      if (a.is_urgent !== undefined) detailItems.push(['Urgent', a.is_urgent ? '<span style="color:var(--red);font-weight:600">Oui</span>' : 'Non']);
+      if (c.recalled_at) detailItems.push(['Rappelé le', esc(formatDate(c.recalled_at))]);
+      if (c.recalled_by) detailItems.push(['Par', esc(c.recalled_by)]);
+
+      const detailHtml = detailItems.length
+        ? detailItems.map(([k, v]) => `<div class="detail-key">${k}</div><div class="detail-val">${v}</div>`).join('')
+        : '<div class="detail-val" style="grid-column:1/-1;color:var(--muted)">Aucune analyse.</div>';
+
+      const transcriptHtml = c.transcript
+        ? `<div class="expand-section" style="grid-column:1/-1"><h4>Transcription</h4><div class="expand-transcript">${esc(c.transcript)}</div></div>`
+        : '';
+
+      return `
+        <div class="expand-content">
+          <div class="expand-section">
+            <h4>Analyse</h4>
+            <div class="detail-grid">${detailHtml}</div>
+          </div>
+          ${transcriptHtml}
+        </div>
+      `;
+    }
+
+    function toggleExpand(id) {
+      const dataRow = document.querySelector(`tr[data-id="${id}"]`);
+      const expandRow = document.getElementById(`expand-${id}`);
+      if (!expandRow) return;
+      const isOpen = expandRow.style.display !== 'none';
+      expandRow.style.display = isOpen ? 'none' : '';
+      if (dataRow) dataRow.classList.toggle('expanded', !isOpen);
+    }
+
+    async function exportCSV(type) {
+      const garage = currentGarage === 'all' ? 'all' : currentGarage;
+      const url = `/api/admin/export/${type}?garage=${encodeURIComponent(garage)}`;
+      try {
+        const res = await fetch(url, { headers: { Authorization: `Bearer ${getToken()}` } });
+        if (!res.ok) return;
+        const blob = await res.blob();
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        const disposition = res.headers.get('Content-Disposition') || '';
+        const match = disposition.match(/filename="([^"]+)"/);
+        a.download = match ? match[1] : `export_${type}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(a.href);
+      } catch (e) { console.error('Export failed', e); }
+    }
+
     function filterTable(q) {
-      const rows = document.querySelectorAll('#calls-table-body tr[data-search]');
+      const rows = document.querySelectorAll('#calls-table-body tr[data-id]');
       const lower = q.toLowerCase();
       rows.forEach(r => {
-        r.style.display = r.dataset.search.toLowerCase().includes(lower) ? '' : 'none';
+        const visible = r.dataset.search.toLowerCase().includes(lower);
+        r.style.display = visible ? '' : 'none';
+        // Also hide the expand row when the data row is hidden
+        const expandRow = document.getElementById(`expand-${r.dataset.id}`);
+        if (expandRow && !visible) expandRow.style.display = 'none';
       });
     }
 

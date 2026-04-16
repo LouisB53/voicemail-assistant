@@ -25,7 +25,6 @@ const __dirname = dirname(__filename);
 // Configuration
 const DB_PATH = process.env.DB_PATH || join(__dirname, '..', 'voicemail.db');
 const SENDGRID_API_SECRET = process.env.SENDGRID_API_SECRET;
-const BCC_MONITOR = 'louis.becker0503@gmail.com';
 
 // Charger la configuration des garages (même logique que server.js)
 let GARAGES;
@@ -518,7 +517,6 @@ async function sendReport(garageName, clientEmail, fromEmail, pdfPath, periodNam
   const msg = {
     to: clientEmail,
     from: fromEmail,
-    bcc: BCC_MONITOR,
     subject: `📊 Rapport Hebdomadaire - ${garageName} - ${periodName}`,
     text: `Bonsoir,
 

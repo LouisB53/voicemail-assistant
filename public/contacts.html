@@ -171,6 +171,12 @@
       transition: opacity 0.12s;
     }
     .btn-primary:hover { opacity: 0.9; }
+    .btn-export-csv {
+      padding: 6px 12px; font-size: 12px; font-weight: 500; border-radius: 7px; cursor: pointer;
+      border: 1px solid var(--green); color: var(--green); background: var(--green-soft);
+      transition: background 0.12s; white-space: nowrap;
+    }
+    .btn-export-csv:hover { background: #dcfce7; }
 
     /* ── TABLE ── */
     .table-wrap {
@@ -426,6 +432,7 @@
       <button onclick="setFilter('manual', this)">Manuels</button>
       <button onclick="setFilter('auto', this)">Auto</button>
     </div>
+    <button id="btn-export-contacts" class="btn-export-csv" style="display:none" onclick="exportContactsCSV()">⬇ Export CSV</button>
   </div>
 
   <!-- TABLE -->
@@ -495,6 +502,7 @@
       document.getElementById('nav-user-name').textContent = currentUser.display_name || currentUser.username;
       if (currentUser.role === 'admin') {
         document.getElementById('nav-link-dashboard').href = '/admin.html';
+        document.getElementById('btn-export-contacts').style.display = '';
         const gr = await apiFetch('/api/admin/garages');
         adminGarages = await gr.json();
         if (adminGarages.length > 0) adminGarage = adminGarages[0].id;
@@ -730,6 +738,25 @@
   document.getElementById('account-modal-overlay').addEventListener('click', (e) => {
     if (e.target === document.getElementById('account-modal-overlay')) closeAccountModal();
   });
+
+  async function exportContactsCSV() {
+    const garage = adminGarage || 'all';
+    const url = `/api/admin/export/contacts?garage=${encodeURIComponent(garage)}`;
+    try {
+      const res = await apiFetch(url);
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      const disposition = res.headers.get('Content-Disposition') || '';
+      const match = disposition.match(/filename="([^"]+)"/);
+      a.download = match ? match[1] : 'contacts.csv';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(a.href);
+    } catch (e) { console.error('Export failed', e); }
+  }
 
   // Init
   checkAuth().then(ok => { if (ok) loadContacts(); });

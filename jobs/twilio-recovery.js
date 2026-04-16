@@ -40,7 +40,6 @@ const SENDGRID_API_SECRET = process.env.SENDGRID_API_SECRET;
 const ACCOUNT_SID = process.env.ACCOUNT_SID;
 const AUTH_TOKEN = process.env.AUTH_TOKEN;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const BCC_MONITOR = 'louis.becker0503@gmail.com';
 
 // Charger la configuration des garages
 let GARAGES;
@@ -167,7 +166,6 @@ async function sendVoicemailEmail(garage, From, callDate, transcript, gptAnalysi
   const msg = {
     to: garage.to_email,
     from: garage.from_email,
-    bcc: BCC_MONITOR,
     subject,
     html,
   };
@@ -195,7 +193,7 @@ async function sendMissedCallEmail(garage, From, callDate) {
       <p>Aucun message n'a été laissé.</p>
     </div>`;
 
-  await sgMail.send({ to: garage.to_email, from: garage.from_email, bcc: BCC_MONITOR, subject, html });
+  await sgMail.send({ to: garage.to_email, from: garage.from_email, subject, html });
   return subject;
 }
 

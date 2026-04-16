@@ -29,7 +29,6 @@ const FROM_DATE = fromIdx !== -1 ? args[fromIdx + 1] : '2026-04-13';
 // --- Config ---
 const DB_PATH = process.env.DB_PATH || join(__dirname, '..', 'voicemail.db');
 const SENDGRID_API_SECRET = process.env.SENDGRID_API_SECRET;
-const BCC_MONITOR = 'louis.becker0503@gmail.com';
 
 // Charger la configuration des garages (même logique que server.js)
 let GARAGES;
@@ -204,7 +203,7 @@ async function run() {
     }
 
     try {
-      await sgMail.send({ to: to_email, from: from_email, bcc: BCC_MONITOR, subject, html });
+      await sgMail.send({ to: to_email, from: from_email, subject, html });
       console.log('   ✅ Envoyé\n');
       totalSent++;
     } catch (err) {

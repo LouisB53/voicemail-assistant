@@ -46,9 +46,12 @@ router.get("/reports", (req, res) => {
   const period = ["week", "month", "quarter", "year"].includes(req.query.period)
     ? req.query.period
     : "week";
-  const garageId = (req.user.role === 'admin' && req.query.garage)
-    ? req.query.garage
-    : req.user.garage_id;
+  let garageId;
+  if (req.user.role === 'admin' && req.query.garage) {
+    garageId = req.query.garage === 'all' ? null : req.query.garage;
+  } else {
+    garageId = req.user.garage_id;
+  }
   const data = getReportKpis(garageId, period);
   res.json({ period, ...data });
 });
