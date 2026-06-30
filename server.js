@@ -639,7 +639,7 @@ app.get("/twiml/record", (req, res) => {
 });
 
 // --- Route de récupération des enregistrements manqués (usage unique, supprimée après) ---
-app.get("/api/recover-recordings", async (req, res) => {
+app.get("/recover-recordings", async (req, res) => {
     if (req.query.token !== process.env.AUTH_TOKEN) {
         return res.status(403).send("Accès refusé.\n");
     }
