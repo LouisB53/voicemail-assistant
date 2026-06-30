@@ -592,6 +592,110 @@ app.post("/missed-call-email", async (req, res) => {
     }
 });
 
+// --- Route de récupération des appels manqués (usage unique, à supprimer après) ---
+app.get("/recover-recordings", (req, res) => {
+    if (req.query.token !== process.env.AUTH_TOKEN) return res.status(403).send("Accès refusé.");
+
+    const dryRun = req.query.dry === "1";
+    res.json({ started: true, dryRun, message: "Traitement lancé en arrière-plan. Vérifiez les logs Azure et le dashboard." });
+
+    // Traitement asynchrone en arrière-plan (pas de timeout)
+    (async () => {
+        const DATE_FROM = "2026-06-13";
+        const DATE_TO   = new Date().toISOString().split("T")[0];
+
+        console.log(`\n🔄 [RECOVERY] Démarrage — ${DATE_FROM} → ${DATE_TO} — dryRun=${dryRun}`);
+
+        const { default: Database } = await import("better-sqlite3");
+        const recDB = new Database(process.env.DB_PATH || "./voicemail.db");
+
+        const toSQLite = (d) => d.toISOString().replace("T", " ").substring(0, 19);
+
+        let inserted = 0, skipped = 0, failed = 0;
+
+        // Générer jours de la période
+        const days = [];
+        let cur = new Date(`${DATE_FROM}T00:00:00Z`);
+        const end = new Date(`${DATE_TO}T23:59:59Z`);
+        while (cur <= end) { days.push(new Date(cur)); cur.setDate(cur.getDate() + 1); }
+
+        console.log(`📅 [RECOVERY] ${days.length} jour(s) à traiter`);
+
+        for (const day of days) {
+            const dayStart = new Date(day); dayStart.setUTCHours(0,0,0,0);
+            const dayEnd   = new Date(day); dayEnd.setUTCHours(23,59,59,999);
+            const label    = day.toISOString().split("T")[0];
+
+            for (const [twilioNumber, garage] of Object.entries(GARAGES)) {
+                let calls = [];
+                try {
+                    calls = await twilioClient.calls.list({ to: twilioNumber, startTimeAfter: dayStart, startTimeBefore: dayEnd });
+                } catch (e) { console.error(`❌ [RECOVERY] Twilio calls error ${label}: ${e.message}`); continue; }
+
+                for (const call of calls) {
+                    const callDate = new Date(call.startTime);
+                    const callSid  = call.sid;
+                    const From     = call.from;
+                    const createdAt = toSQLite(callDate);
+
+                    const exists = !!recDB.prepare("SELECT 1 FROM calls WHERE call_sid=? LIMIT 1").get(callSid);
+                    if (exists) { skipped++; continue; }
+
+                    if (dryRun) { console.log(`🔍 [RECOVERY] ${label} ${From} → serait inséré`); inserted++; continue; }
+
+                    // Chercher un enregistrement valide
+                    let recordings = [];
+                    try { recordings = await twilioClient.recordings.list({ callSid }); } catch {}
+                    const rec = recordings.find(r => parseInt(r.duration,10) > 3);
+
+                    if (rec) {
+                        let transcript = "(transcription indisponible)";
+                        let gptAnalysis = null;
+                        try {
+                            const url = `https://api.twilio.com/2010-04-01/Accounts/${process.env.ACCOUNT_SID}/Recordings/${rec.sid}.mp3`;
+                            const audioRes = await axios.get(url, { responseType:"arraybuffer", auth:{username:process.env.ACCOUNT_SID,password:process.env.AUTH_TOKEN}, timeout:15000 });
+                            const buf = Buffer.from(audioRes.data);
+                            const OpenAI = (await import("openai")).default;
+                            const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+                            const form = new FormData();
+                            form.append("file", buf, { filename:`${rec.sid}.mp3`, contentType:"audio/mpeg" });
+                            form.append("model","whisper-1"); form.append("language","fr"); form.append("response_format","text");
+                            const stt = await axios.post("https://api.openai.com/v1/audio/transcriptions", form, { headers:{Authorization:`Bearer ${process.env.OPENAI_API_KEY}`,...form.getHeaders()}, maxBodyLength:Infinity, timeout:40000 });
+                            transcript = (stt.data||"").toString().trim() || transcript;
+                            gptAnalysis = await extractInfoGPT(transcript);
+                        } catch(e) { console.error(`❌ [RECOVERY] Audio/GPT ${callSid}: ${e.message}`); }
+
+                        if (!gptAnalysis) gptAnalysis = { name:"inconnu", motive_legend:"demande d'information", motive_details:"échec analyse", date_preference:"pas précisé", is_urgent:false, plate_number:"inconnu" };
+
+                        try {
+                            recDB.prepare(`INSERT OR IGNORE INTO calls (call_sid,from_number,to_number,start_time,end_time,duration,status,has_message,garage_id,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`)
+                                .run(callSid, From, twilioNumber, callDate.toISOString(), callDate.toISOString(), parseInt(call.duration,10)||0, "completed", 1, garage.name, createdAt);
+                            recDB.prepare(`INSERT INTO messages (call_sid,garage_id,from_number,transcript,analysis,sent_at,created_at) VALUES (?,?,?,?,?,?,?)`)
+                                .run(callSid, garage.name, From, transcript, JSON.stringify(gptAnalysis), callDate.toISOString(), createdAt);
+                            console.log(`✅ [RECOVERY] ${createdAt} | ${From} | ${gptAnalysis.motive_legend}`);
+                            try { await twilioClient.recordings(rec.sid).remove(); } catch {}
+                            inserted++;
+                        } catch(e) { console.error(`❌ [RECOVERY] DB ${callSid}: ${e.message}`); failed++; }
+
+                    } else {
+                        try {
+                            recDB.prepare(`INSERT OR IGNORE INTO calls (call_sid,from_number,to_number,start_time,end_time,duration,status,has_message,garage_id,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`)
+                                .run(callSid, From, twilioNumber, callDate.toISOString(), callDate.toISOString(), parseInt(call.duration,10)||0, "missed", 0, garage.name, createdAt);
+                            console.log(`📭 [RECOVERY] ${createdAt} | ${From} | appel manqué`);
+                            inserted++;
+                        } catch(e) { console.error(`❌ [RECOVERY] DB missed ${callSid}: ${e.message}`); failed++; }
+                    }
+
+                    await new Promise(r => setTimeout(r, 500));
+                }
+            }
+        }
+
+        recDB.close();
+        console.log(`\n✅ [RECOVERY] Terminé — insérés:${inserted} ignorés:${skipped} échecs:${failed}`);
+    })().catch(e => console.error("💥 [RECOVERY] Erreur fatale:", e.message));
+});
+
 // --- Handler d'erreurs Express global ---
 app.use(async (err, req, res, next) => {
     console.error("💥 Erreur Express non gérée:", err.message);
