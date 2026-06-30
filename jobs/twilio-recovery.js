@@ -1,20 +1,16 @@
 #!/usr/bin/env node
 /**
- * Script de rattrapage complet via l'API Twilio
+ * Script de rattrapage : insère en BDD tous les appels Twilio de la période
+ * avec leurs dates réelles, sans envoyer d'emails.
+ * Les données apparaissent ensuite sur la plateforme comme si elles avaient été traitées en live.
  *
- * Pour chaque appel du 13 avril non présent en BDD :
- * - Si enregistrement disponible : transcription Whisper + analyse GPT + email avec transcription
- * - Si pas d'enregistrement : email appel manqué sans message
- *
- * Reproduit exactement le comportement de server.js (processVoicemail + missed-call-email)
- *
- * Usage : node jobs/twilio-recovery.js [--date YYYY-MM-DD] [--dry-run]
- *   --date    : date à traiter en heure Paris (défaut : 2026-04-13)
- *   --dry-run : affiche sans envoyer ni écrire en BDD
+ * Usage : node jobs/twilio-recovery.js [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--dry-run]
+ *   --from    : date de début (défaut : 2026-06-13)
+ *   --to      : date de fin inclusive (défaut : aujourd'hui)
+ *   --dry-run : affiche sans écrire en BDD
  */
 
 import Database from 'better-sqlite3';
-import sgMail from '@sendgrid/mail';
 import axios from 'axios';
 import FormData from 'form-data';
 import Twilio from 'twilio';
@@ -23,7 +19,6 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import fs from 'fs';
 import { extractInfoGPT } from '../utils/gpt-extractor.js';
-import { escapeHtml, normalizePhone } from '../utils/extractors.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -31,12 +26,15 @@ const __dirname = dirname(__filename);
 // --- Arguments CLI ---
 const args = process.argv.slice(2);
 const DRY_RUN = args.includes('--dry-run');
-const dateIdx = args.indexOf('--date');
-const TARGET_DATE = dateIdx !== -1 ? args[dateIdx + 1] : '2026-04-13';
+
+const fromIdx = args.indexOf('--from');
+const FROM_DATE = fromIdx !== -1 ? args[fromIdx + 1] : '2026-06-13';
+
+const toIdx = args.indexOf('--to');
+const TO_DATE = toIdx !== -1 ? args[toIdx + 1] : DateTime.now().setZone('Europe/Paris').toFormat('yyyy-MM-dd');
 
 // --- Config ---
 const DB_PATH = process.env.DB_PATH || join(__dirname, '..', 'voicemail.db');
-const SENDGRID_API_SECRET = process.env.SENDGRID_API_SECRET;
 const ACCOUNT_SID = process.env.ACCOUNT_SID;
 const AUTH_TOKEN = process.env.AUTH_TOKEN;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -51,53 +49,41 @@ if (configString) {
   GARAGES = JSON.parse(fs.readFileSync(join(__dirname, '..', 'garages.json'), 'utf-8'));
 }
 
-// Vérification des variables requises
-const missing = ['SENDGRID_API_SECRET', 'ACCOUNT_SID', 'AUTH_TOKEN', 'OPENAI_API_KEY']
-  .filter(k => !process.env[k]);
+const missing = ['ACCOUNT_SID', 'AUTH_TOKEN', 'OPENAI_API_KEY'].filter(k => !process.env[k]);
 if (missing.length > 0 && !DRY_RUN) {
   console.error(`❌ Variables manquantes : ${missing.join(', ')}`);
   process.exit(1);
 }
 
-if (!DRY_RUN) sgMail.setApiKey(SENDGRID_API_SECRET);
 const twilioClient = Twilio(ACCOUNT_SID, AUTH_TOKEN);
 
-// --- Utilitaires (même logique que server.js) ---
+// --- Utilitaires ---
 function toParisTime(date) {
-  return DateTime.fromJSDate(date).setZone('Europe/Paris').toFormat('dd/MM - HH:mm');
+  return DateTime.fromJSDate(date).setZone('Europe/Paris').toFormat('dd/MM/yyyy HH:mm');
 }
 
-function recoveryBanner(callDate) {
-  return `
-    <div style="background:#fff3cd;border-left:4px solid #f6c90e;padding:10px 14px;margin-bottom:16px;font-size:13px;color:#555;line-height:1.5;">
-      <strong>📬 Rattrapage</strong> — Cette notification concerne un appel du <strong>${callDate}</strong>
-      qui n'a pas pu être envoyé suite à une interruption de notre service email (11-13 avril).
-    </div>`;
+function toSQLiteUTC(date) {
+  return date.toISOString().replace('T', ' ').substring(0, 19);
 }
 
 // --- BDD ---
-function openDB() {
-  return new Database(DB_PATH);
-}
-
 function isAlreadyProcessed(db, callSid) {
-  const row = db.prepare('SELECT id FROM calls WHERE call_sid = ?').get(callSid);
-  return !!row;
+  return !!db.prepare('SELECT id FROM calls WHERE call_sid = ?').get(callSid);
 }
 
 function saveCallToDB(db, data) {
   db.prepare(`
     INSERT OR IGNORE INTO calls
-      (call_sid, from_number, to_number, start_time, end_time, duration, status, has_message, garage_id)
+      (call_sid, from_number, to_number, start_time, end_time, duration, status, has_message, garage_id, created_at)
     VALUES
-      (@call_sid, @from_number, @to_number, @start_time, @end_time, @duration, @status, @has_message, @garage_id)
+      (@call_sid, @from_number, @to_number, @start_time, @end_time, @duration, @status, @has_message, @garage_id, @created_at)
   `).run(data);
 }
 
 function saveMessageToDB(db, data) {
   db.prepare(`
-    INSERT INTO messages (call_sid, garage_id, from_number, transcript, analysis, sent_at)
-    VALUES (@call_sid, @garage_id, @from_number, @transcript, @analysis, @sent_at)
+    INSERT INTO messages (call_sid, garage_id, from_number, transcript, analysis, sent_at, created_at)
+    VALUES (@call_sid, @garage_id, @from_number, @transcript, @analysis, @sent_at, @created_at)
   `).run(data);
 }
 
@@ -121,160 +107,101 @@ async function transcribeAudio(audioBuffer, callSid) {
 
     return (res.data || '').toString().trim() || '(transcription vide)';
   } catch (e) {
-    console.error(`   ❌ Erreur Whisper : ${e.message}`);
+    console.error(`    ❌ Erreur Whisper : ${e.message}`);
     return `(échec transcription: ${e.message})`;
   }
-}
-
-// --- Email avec transcription (même format que processVoicemail) ---
-async function sendVoicemailEmail(garage, From, callDate, transcript, gptAnalysis, audioBuffer, callSid) {
-  const fromPhone = normalizePhone(From);
-  const { name, motive_legend, motive_details, date_preference, is_urgent, plate_number } = gptAnalysis;
-
-  const priorityTag = is_urgent ? '🚨 URGENT' : '';
-  const subject = `📞 [${motive_legend.toUpperCase()}] ${name} (${fromPhone}) - ${date_preference}${priorityTag ? ' · ' + priorityTag : ''}`;
-
-  const summaryLines = [
-    priorityTag && `**${priorityTag}**`,
-    `**Catégorie :** ${motive_legend}`,
-    `**Motif détaillé :** ${motive_details}`,
-    `**Date souhaitée :** ${date_preference}`,
-    `**Appelant :** ${name} (${fromPhone})`,
-    plate_number && plate_number !== 'inconnu' && `**Immatriculation :** ${plate_number}`,
-    `—`,
-    `Rappel rapide recommandé.`,
-  ].filter(Boolean);
-
-  const summaryHtml = summaryLines.map(l => {
-    if (l === '—') return '<hr style="border:none;border-top:1px solid #ddd;margin:12px 0;">';
-    const clean = escapeHtml(l.replace(/\*\*/g, ''));
-    const match = clean.match(/^([^:]+):\s*(.*)/);
-    if (match) return `<p style="margin:0 0 4px 0;"><strong>${match[1]}:</strong> ${match[2]}</p>`;
-    return `<p style="margin:0 0 4px 0;"><strong>${clean}</strong></p>`;
-  }).join('');
-
-  const html = `
-    <div style="font-family: Arial, sans-serif; line-height:1.6; color:#222; font-size:15px; max-width:600px;">
-      ${recoveryBanner(callDate)}
-      ${summaryHtml}
-      <p style="margin:14px 0 4px 0;"><strong>Transcription :</strong></p>
-      <p style="margin:0; padding-left:10px; border-left:3px solid #ccc;">
-        ${escapeHtml(transcript).replace(/\n+/g, '<br>').replace(/([.?!])\s/g, '$1&nbsp;')}
-      </p>
-    </div>`;
-
-  const msg = {
-    to: garage.to_email,
-    from: garage.from_email,
-    subject,
-    html,
-  };
-
-  if (audioBuffer) {
-    msg.attachments = [{
-      content: audioBuffer.toString('base64'),
-      filename: `voicemail-${callSid}.mp3`,
-      type: 'audio/mpeg',
-      disposition: 'attachment',
-    }];
-  }
-
-  await sgMail.send(msg);
-  return subject;
-}
-
-// --- Email appel manqué (même format que /missed-call-email) ---
-async function sendMissedCallEmail(garage, From, callDate) {
-  const subject = `📞 Appel manqué sans message de ${From}`;
-  const html = `
-    <div style="font-family: Arial, sans-serif; line-height:1.6; color:#222; font-size:15px; max-width:600px;">
-      ${recoveryBanner(callDate)}
-      <p><strong>Appelant :</strong> ${escapeHtml(From)}</p>
-      <p>Aucun message n'a été laissé.</p>
-    </div>`;
-
-  await sgMail.send({ to: garage.to_email, from: garage.from_email, subject, html });
-  return subject;
 }
 
 // --- Script principal ---
 async function run() {
   console.log('='.repeat(60));
-  console.log('📞 RATTRAPAGE VIA API TWILIO — PitCall');
+  console.log('📞 RATTRAPAGE BDD VIA TWILIO — PitCall');
   console.log('='.repeat(60));
-  console.log(`Date ciblée    : ${TARGET_DATE} (heure Paris)`);
-  console.log(`Mode           : ${DRY_RUN ? '🔍 DRY RUN' : '🚀 ENVOI RÉEL'}`);
+  console.log(`Période        : ${FROM_DATE} → ${TO_DATE}`);
+  console.log(`Mode           : ${DRY_RUN ? '🔍 DRY RUN (aucune écriture)' : '🚀 INSERTION EN BDD'}`);
   console.log(`Base de données: ${DB_PATH}`);
   console.log('='.repeat(60) + '\n');
 
-  // Plage horaire : journée du TARGET_DATE en heure Paris → UTC
-  const dayStart = DateTime.fromISO(TARGET_DATE, { zone: 'Europe/Paris' }).startOf('day');
-  const dayEnd = dayStart.endOf('day');
-
-  // Twilio filtre par date en UTC (format YYYY-MM-DD)
-  const twilioStartDate = dayStart.toUTC().toJSDate();
-  const twilioEndDate = dayEnd.toUTC().plus({ days: 1 }).toJSDate(); // endTime est exclusif
-
-  console.log(`Plage UTC      : ${dayStart.toUTC().toISO()} → ${dayEnd.toUTC().toISO()}\n`);
+  // Générer la liste des jours à traiter
+  const days = [];
+  let cursor = DateTime.fromISO(FROM_DATE, { zone: 'Europe/Paris' }).startOf('day');
+  const end = DateTime.fromISO(TO_DATE, { zone: 'Europe/Paris' }).endOf('day');
+  while (cursor <= end) {
+    days.push(cursor);
+    cursor = cursor.plus({ days: 1 });
+  }
+  console.log(`📅 ${days.length} jour(s) à traiter\n`);
 
   const db = openDB();
-  let totalSent = 0;
+  let totalInserted = 0;
   let totalSkipped = 0;
   let totalFailed = 0;
 
-  for (const [twilioNumber, garage] of Object.entries(GARAGES)) {
-    console.log(`\n${'─'.repeat(50)}`);
-    console.log(`🏢 ${garage.name} (${twilioNumber})`);
+  for (const day of days) {
+    const dayLabel = day.toFormat('dd/MM/yyyy');
+    const dayStart = day.toUTC().toJSDate();
+    const dayEnd = day.endOf('day').toUTC().toJSDate();
 
-    // Récupérer les appels Twilio entrants sur ce numéro ce jour-là
-    let calls;
-    try {
-      calls = await twilioClient.calls.list({
-        to: twilioNumber,
-        startTimeAfter: twilioStartDate,
-        startTimeBefore: twilioEndDate,
-      });
-    } catch (err) {
-      console.error(`   ❌ Erreur API Twilio : ${err.message}`);
-      totalFailed++;
-      continue;
-    }
+    console.log(`\n${'═'.repeat(50)}`);
+    console.log(`📅 ${dayLabel}`);
 
-    console.log(`   ${calls.length} appel(s) trouvé(s) sur Twilio`);
+    for (const [twilioNumber, garage] of Object.entries(GARAGES)) {
+      console.log(`\n  🏢 ${garage.name} (${twilioNumber})`);
 
-    for (const call of calls) {
-      const callDate = toParisTime(call.startTime);
-      const From = call.from;
-      const callSid = call.sid;
-
-      console.log(`\n   📞 ${callDate} — ${From} (${callSid})`);
-
-      // Vérifier si déjà traité en BDD
-      if (isAlreadyProcessed(db, callSid)) {
-        console.log(`   ⏭️  Déjà en BDD — ignoré`);
-        totalSkipped++;
+      let calls;
+      try {
+        calls = await twilioClient.calls.list({
+          to: twilioNumber,
+          startTimeAfter: dayStart,
+          startTimeBefore: dayEnd,
+        });
+      } catch (err) {
+        console.error(`  ❌ Erreur API Twilio : ${err.message}`);
+        totalFailed++;
         continue;
       }
 
-      // Récupérer les enregistrements de cet appel
-      let recordings = [];
-      try {
-        recordings = await twilioClient.recordings.list({ callSid });
-      } catch (err) {
-        console.error(`   ⚠️  Impossible de récupérer les enregistrements : ${err.message}`);
-      }
+      if (calls.length === 0) { console.log(`  → Aucun appel`); continue; }
+      console.log(`  → ${calls.length} appel(s)`);
 
-      const validRecording = recordings.find(r => parseInt(r.duration, 10) > 3);
+      for (const call of calls) {
+        const callDateObj = new Date(call.startTime);
+        const callDate = toParisTime(callDateObj);
+        const From = call.from;
+        const callSid = call.sid;
+        const createdAt = toSQLiteUTC(callDateObj);
 
-      if (validRecording) {
-        console.log(`   🎙️  Enregistrement trouvé (${validRecording.duration}s) — transcription en cours...`);
+        console.log(`\n    📞 ${callDate} — ${From}`);
 
-        // Télécharger l'audio
-        let audioBuffer = null;
-        let transcript = '(transcription indisponible)';
-        let gptAnalysis = null;
+        if (isAlreadyProcessed(db, callSid)) {
+          console.log(`    ⏭️  Déjà en BDD`);
+          totalSkipped++;
+          continue;
+        }
 
-        if (!DRY_RUN) {
+        if (DRY_RUN) {
+          console.log(`    ✅ [DRY RUN] Serait inséré en BDD`);
+          totalInserted++;
+          continue;
+        }
+
+        // Récupérer les enregistrements
+        let recordings = [];
+        try {
+          recordings = await twilioClient.recordings.list({ callSid });
+        } catch (err) {
+          console.error(`    ⚠️  Enregistrements inaccessibles : ${err.message}`);
+        }
+
+        const validRecording = recordings.find(r => parseInt(r.duration, 10) > 3);
+
+        if (validRecording) {
+          console.log(`    🎙️  Enregistrement (${validRecording.duration}s) — transcription...`);
+
+          let audioBuffer = null;
+          let transcript = '(transcription indisponible)';
+          let gptAnalysis = null;
+
           try {
             const recordingUrl = `https://api.twilio.com/2010-04-01/Accounts/${ACCOUNT_SID}/Recordings/${validRecording.sid}.mp3`;
             const audioRes = await axios.get(recordingUrl, {
@@ -283,42 +210,36 @@ async function run() {
               timeout: 15000,
             });
             audioBuffer = Buffer.from(audioRes.data);
-            console.log(`   ✅ Audio téléchargé`);
 
             transcript = await transcribeAudio(audioBuffer, callSid);
-            console.log(`   ✅ Transcription : "${transcript.slice(0, 80)}..."`);
+            console.log(`    ✅ Transcription : "${transcript.slice(0, 70)}${transcript.length > 70 ? '...' : ''}"`);
 
             gptAnalysis = await extractInfoGPT(transcript);
-            console.log(`   ✅ GPT : ${gptAnalysis.motive_legend} — ${gptAnalysis.name}`);
+            console.log(`    ✅ GPT : ${gptAnalysis.motive_legend} — ${gptAnalysis.name}`);
           } catch (err) {
-            console.error(`   ❌ Erreur traitement audio : ${err.message}`);
+            console.error(`    ❌ Erreur traitement : ${err.message}`);
           }
 
           if (!gptAnalysis) {
             gptAnalysis = {
-              name: 'inconnu',
-              motive_legend: 'demande d\'information',
-              motive_details: 'échec analyse',
-              date_preference: 'pas précisé',
-              is_urgent: false,
-              plate_number: 'inconnu',
+              name: 'inconnu', motive_legend: "demande d'information",
+              motive_details: 'échec analyse', date_preference: 'pas précisé',
+              is_urgent: false, plate_number: 'inconnu',
             };
           }
 
           try {
-            const subject = await sendVoicemailEmail(garage, From, callDate, transcript, gptAnalysis, audioBuffer, callSid);
-            console.log(`   ✅ Email envoyé : ${subject}`);
-
             saveCallToDB(db, {
               call_sid: callSid,
               from_number: From,
               to_number: twilioNumber,
-              start_time: call.startTime.toISOString(),
-              end_time: call.endTime?.toISOString() || call.startTime.toISOString(),
+              start_time: callDateObj.toISOString(),
+              end_time: (call.endTime ? new Date(call.endTime) : callDateObj).toISOString(),
               duration: parseInt(call.duration, 10) || 0,
               status: 'completed',
               has_message: 1,
               garage_id: garage.name,
+              created_at: createdAt,
             });
             saveMessageToDB(db, {
               call_sid: callSid,
@@ -326,59 +247,49 @@ async function run() {
               from_number: From,
               transcript,
               analysis: JSON.stringify(gptAnalysis),
-              sent_at: new Date().toISOString(),
+              sent_at: callDateObj.toISOString(),
+              created_at: createdAt,
             });
+            console.log(`    💾 Inséré en BDD (${createdAt})`);
 
-            // Suppression RGPD de l'enregistrement Twilio
+            // Suppression RGPD
             try {
               await twilioClient.recordings(validRecording.sid).remove();
-              console.log(`   🗑️  Enregistrement Twilio supprimé (RGPD)`);
+              console.log(`    🗑️  Enregistrement Twilio supprimé (RGPD)`);
             } catch (err) {
-              console.warn(`   ⚠️  Impossible de supprimer l'enregistrement : ${err.message}`);
+              console.warn(`    ⚠️  Suppression Twilio échouée : ${err.message}`);
             }
 
-            totalSent++;
+            totalInserted++;
           } catch (err) {
-            console.error(`   ❌ Échec envoi email : ${err.message}`);
-            if (err.response) console.error('   Détails:', JSON.stringify(err.response.body));
+            console.error(`    ❌ Erreur BDD : ${err.message}`);
             totalFailed++;
           }
 
         } else {
-          console.log(`   ✅ [DRY RUN] Email avec transcription préparé pour ${garage.to_email}`);
-          totalSent++;
-        }
-
-      } else {
-        // Pas d'enregistrement valide → appel manqué sans message
-        console.log(`   📵 Pas d'enregistrement valide — email appel manqué`);
-
-        if (!DRY_RUN) {
+          // Appel manqué sans enregistrement
           try {
-            await sendMissedCallEmail(garage, From, callDate);
-            console.log(`   ✅ Email appel manqué envoyé`);
-
             saveCallToDB(db, {
               call_sid: callSid,
               from_number: From,
               to_number: twilioNumber,
-              start_time: call.startTime.toISOString(),
-              end_time: call.endTime?.toISOString() || call.startTime.toISOString(),
+              start_time: callDateObj.toISOString(),
+              end_time: (call.endTime ? new Date(call.endTime) : callDateObj).toISOString(),
               duration: parseInt(call.duration, 10) || 0,
               status: 'missed',
               has_message: 0,
               garage_id: garage.name,
+              created_at: createdAt,
             });
-
-            totalSent++;
+            console.log(`    💾 Appel manqué inséré en BDD (${createdAt})`);
+            totalInserted++;
           } catch (err) {
-            console.error(`   ❌ Échec envoi email : ${err.message}`);
+            console.error(`    ❌ Erreur BDD : ${err.message}`);
             totalFailed++;
           }
-        } else {
-          console.log(`   ✅ [DRY RUN] Email appel manqué préparé pour ${garage.to_email}`);
-          totalSent++;
         }
+
+        await new Promise(r => setTimeout(r, 500));
       }
     }
   }
@@ -388,12 +299,16 @@ async function run() {
   console.log('\n' + '='.repeat(60));
   console.log('RÉSUMÉ');
   console.log('='.repeat(60));
-  console.log(`✅ Emails envoyés : ${totalSent}`);
-  console.log(`⏭️  Déjà traités  : ${totalSkipped}`);
-  console.log(`❌ Échecs         : ${totalFailed}`);
+  console.log(`💾 Insérés en BDD : ${totalInserted}`);
+  console.log(`⏭️  Déjà présents  : ${totalSkipped}`);
+  console.log(`❌ Échecs          : ${totalFailed}`);
   console.log('='.repeat(60));
 
   process.exit(totalFailed > 0 ? 1 : 0);
+}
+
+function openDB() {
+  return new Database(DB_PATH);
 }
 
 run().catch(err => {
