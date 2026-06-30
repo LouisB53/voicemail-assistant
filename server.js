@@ -8,15 +8,17 @@ import fs from "fs";
 import dotenv from "dotenv";
 // Import de l'extracteur GPT et des utilitaires nécessaires
 import { extractInfoGPT } from "./utils/gpt-extractor.js"; 
-import { saveCall, saveMessage, getAllCalls, getRecentCalls, getGarageSettings, upsertAutoContact, getContactByPhone } from "./db.js";
+import db, { saveCall, saveMessage, getAllCalls, getRecentCalls, getGarageSettings, upsertAutoContact, getContactByPhone, getAllGarageConfigs } from "./db.js";
 import authRouter from "./routes/auth.js";
 import dashboardRouter from "./routes/dashboard.js";
 import contactsRouter from "./routes/contacts.js";
 import adminRouter from "./routes/admin.js";
+import billingRouter from "./routes/billing.js";
 import { logServerError } from "./db.js";
 import { escapeHtml, normalizePhone } from "./utils/extractors.js";
 import { DateTime } from "luxon";
-import Twilio from "twilio"; // Ajout de Twilio pour la gestion API
+import Twilio from "twilio";
+import { GARAGES, addGarageToRuntime } from "./utils/garages.js";
 
 dotenv.config();
 
@@ -24,6 +26,9 @@ const app = express();
 
 // Configuration Twilio
 const twilioClient = Twilio(process.env.ACCOUNT_SID, process.env.AUTH_TOKEN);
+
+// Raw body pour le webhook Stripe (doit être avant express.json)
+app.use("/api/billing/webhook", express.raw({ type: "application/json" }));
 
 // Middleware pour accepter tous les formats Twilio
 app.use(express.urlencoded({ extended: true }));
@@ -35,15 +40,26 @@ app.use(express.static("public"));
 
 // Routes API
 app.use("/api/auth", authRouter);
+app.use("/api/billing", billingRouter);
 app.use("/api", dashboardRouter);
 app.use("/api", contactsRouter);
 app.use("/api/admin", adminRouter);
 
 // --- DÉBUT DU BLOC MODIFIÉ POUR LA SÉCURITÉ ET AZURE APP SERVICE ---
 
-// Charger la configuration des garages depuis le module partagé
-import { GARAGES } from "./utils/garages.js";
-console.log("✅ Configuration des garages chargée.");
+// Charger la configuration des garages (statique + dynamique DB)
+{
+  const dbGarages = getAllGarageConfigs();
+  for (const g of dbGarages) {
+    addGarageToRuntime(g.twilio_number, {
+      id: g.garage_id,
+      name: g.name,
+      to_email: g.to_email,
+      from_email: g.from_email,
+    });
+  }
+  console.log(`✅ Garages chargés : ${Object.keys(GARAGES).length} au total, ${dbGarages.length} dynamiques.`);
+}
 
 // Configurer SendGrid
 sgMail.setApiKey(process.env.SENDGRID_API_SECRET);
@@ -590,6 +606,184 @@ app.post("/missed-call-email", async (req, res) => {
     } catch (err) {
         console.error("❌ Erreur dans le traitement de l'état de l'appel:", err.message);
     }
+});
+
+// --- TwiML dynamique pour les garages auto-provisionnés ---
+app.get("/twiml/record", (req, res) => {
+  let to = (req.query.To || req.query.to || "").trim().replace(/\s+/g, "");
+  if (!to.startsWith("+")) to = "+" + to;
+  const garage = GARAGES[to];
+
+  res.type("text/xml");
+
+  if (!garage) {
+    return res.send(`<?xml version="1.0" encoding="UTF-8"?><Response><Say language="fr-FR">Ce numéro n'est pas configuré. Veuillez rappeler directement le garage.</Say><Hangup/></Response>`);
+  }
+
+  const settings = getGarageSettings(garage.name);
+  const garageName = garage.name.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  if (settings.is_closed) {
+    const msg = (settings.closed_message || "Le garage est actuellement fermé. Merci de rappeler pendant nos horaires d'ouverture.")
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    return res.send(`<?xml version="1.0" encoding="UTF-8"?><Response><Say language="fr-FR">${msg}</Say><Hangup/></Response>`);
+  }
+
+  const PUBLIC_SERVER_URL = process.env.PUBLIC_SERVER_URL || "https://app.pitcall.fr";
+  res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say language="fr-FR">Bonjour, vous avez bien joint ${garageName}. Merci de nous laisser votre message après le bip. Nous vous rappellerons dans les meilleurs délais.</Say>
+  <Record action="${PUBLIC_SERVER_URL}/email-voicemail" method="POST" maxLength="120" playBeep="true" trim="trim-silence" recordingStatusCallback="${PUBLIC_SERVER_URL}/email-voicemail" recordingStatusCallbackMethod="POST" />
+  <Say language="fr-FR">Nous n'avons pas reçu de message. Merci de rappeler. Au revoir.</Say>
+</Response>`);
+});
+
+// --- Route de récupération des enregistrements manqués (usage unique, supprimée après) ---
+app.get("/api/recover-recordings", async (req, res) => {
+    if (req.query.token !== process.env.AUTH_TOKEN) {
+        return res.status(403).send("Accès refusé.\n");
+    }
+
+    const dryRun   = req.query.dry === "1";
+    const noDelete = req.query.nodelete === "1";
+    const DATE_FROM = new Date("2026-06-13T00:00:00Z");
+    const DATE_TO   = new Date();
+
+    res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    res.setHeader("Transfer-Encoding", "chunked");
+    res.setHeader("X-Accel-Buffering", "no");
+
+    const log = (msg) => { res.write(msg + "\n"); };
+
+    log(`=== Récupération enregistrements Twilio ===`);
+    log(`Période : ${DATE_FROM.toLocaleDateString("fr-FR")} → ${DATE_TO.toLocaleDateString("fr-FR")}`);
+    log(`Mode    : ${dryRun ? "DRY-RUN" : "INSERTION BDD"}`);
+    log(`RGPD    : ${noDelete ? "conservation Twilio" : "suppression après traitement"}`);
+    log(``);
+
+    let recordings;
+    try {
+        recordings = await twilioClient.recordings.list({ dateCreatedAfter: DATE_FROM, dateCreatedBefore: DATE_TO, limit: 1000 });
+    } catch (err) {
+        log(`ERREUR API Twilio : ${err.message}`);
+        return res.end();
+    }
+
+    if (recordings.length === 0) {
+        log("Aucun enregistrement trouvé sur Twilio pour cette période.");
+        return res.end();
+    }
+
+    log(`${recordings.length} enregistrement(s) trouvé(s) :\n`);
+
+    const toSQLite = (d) => d.toISOString().replace("T", " ").substring(0, 19);
+
+    let nouveaux = 0;
+    for (const rec of recordings) {
+        const sid  = rec.callSid || rec.sid;
+        const deja = !!db.prepare("SELECT 1 FROM calls WHERE call_sid = ? LIMIT 1").get(sid)
+                  || !!db.prepare("SELECT 1 FROM calls WHERE call_sid = ? LIMIT 1").get(rec.sid);
+        const garage = GARAGES[rec.to || ""];
+        const date = new Date(rec.dateCreated).toLocaleString("fr-FR", { timeZone: "Europe/Paris" });
+        const flag = deja ? "[deja en BDD]" : "[a traiter ]";
+        if (!deja) nouveaux++;
+        log(`  ${flag} ${date} | ${rec.from} → ${rec.to} | ${rec.duration}s | ${garage?.name || "inconnu"} | ${rec.sid}`);
+    }
+
+    log(`\n${nouveaux} nouveau(x) à insérer.`);
+
+    if (dryRun || nouveaux === 0) {
+        log(dryRun ? "\nDry-run terminé. Relancez sans ?dry=1 pour insérer." : "\nRien à faire.");
+        return res.end();
+    }
+
+    log(`\n--- Début du traitement ---\n`);
+
+    let ok = 0, skipped = 0, failed = 0;
+
+    for (const rec of recordings) {
+        const RecordingSid = rec.sid;
+        const CallSid      = rec.callSid || rec.sid;
+        const From         = rec.from;
+        const To           = rec.to;
+        const duration     = parseInt(rec.duration, 10) || 0;
+        const callDate     = new Date(rec.dateCreated);
+        const sqliteDate   = toSQLite(callDate);
+        const isoDate      = callDate.toISOString();
+
+        const deja = !!db.prepare("SELECT 1 FROM calls WHERE call_sid = ? LIMIT 1").get(CallSid)
+                  || !!db.prepare("SELECT 1 FROM calls WHERE call_sid = ? LIMIT 1").get(RecordingSid);
+        if (deja) { skipped++; continue; }
+
+        const garage = GARAGES[To || ""];
+        if (!garage) { log(`[${RecordingSid}] Numéro ${To} inconnu — ignoré`); skipped++; continue; }
+
+        const dateLabel = callDate.toLocaleString("fr-FR", { timeZone: "Europe/Paris" });
+        log(`[${ok + failed + 1}/${nouveaux}] ${dateLabel} | ${From} | ${garage.name} | ${duration}s`);
+
+        if (duration <= 3) {
+            db.prepare(`INSERT OR IGNORE INTO calls (call_sid, from_number, to_number, start_time, end_time, duration, status, has_message, garage_id, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`)
+              .run(RecordingSid, From, To, isoDate, isoDate, duration, "missed", 0, garage.name, sqliteDate);
+            log(`  -> Appel manqué inséré`);
+            ok++; continue;
+        }
+
+        try {
+            const recordingUrl = `https://api.twilio.com/2010-04-01/Accounts/${process.env.ACCOUNT_SID}/Recordings/${RecordingSid}.mp3`;
+            const audioRes = await axios.get(recordingUrl, {
+                responseType: "arraybuffer",
+                auth: { username: process.env.ACCOUNT_SID, password: process.env.AUTH_TOKEN },
+                timeout: 15000,
+            });
+            const audioBuffer = Buffer.from(audioRes.data);
+            log(`  -> Audio OK (${Math.round(audioBuffer.length / 1024)} KB)`);
+
+            let transcript = "(transcription indisponible)";
+            try {
+                const OpenAI = (await import("openai")).default;
+                const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+                const form = new FormData();
+                form.append("file", audioBuffer, { filename: `${RecordingSid}.mp3`, contentType: "audio/mpeg" });
+                form.append("model", "whisper-1");
+                form.append("language", "fr");
+                form.append("response_format", "text");
+                const sttRes = await axios.post("https://api.openai.com/v1/audio/transcriptions", form, {
+                    headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, ...form.getHeaders() },
+                    maxBodyLength: Infinity, timeout: 40000,
+                });
+                transcript = (sttRes.data || "").toString().trim() || transcript;
+                log(`  -> Transcription : "${transcript.substring(0, 80)}${transcript.length > 80 ? "..." : ""}"`);
+            } catch (e) {
+                log(`  -> Whisper échoué : ${e.message}`);
+                transcript = `(échec transcription: ${e?.message || "inconnue"})`;
+            }
+
+            const gpt = await extractInfoGPT(transcript);
+            log(`  -> GPT : ${gpt.motive_legend} | urgent: ${gpt.is_urgent}`);
+
+            db.prepare(`INSERT OR IGNORE INTO calls (call_sid, from_number, to_number, start_time, end_time, duration, status, has_message, garage_id, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`)
+              .run(CallSid, From, To, isoDate, isoDate, duration, "processed", 1, garage.name, sqliteDate);
+            db.prepare(`INSERT INTO messages (call_sid, garage_id, from_number, transcript, analysis, sent_at, created_at) VALUES (?,?,?,?,?,?,?)`)
+              .run(CallSid, garage.name, From, transcript, JSON.stringify(gpt), isoDate, sqliteDate);
+            upsertAutoContact(garage.name, From, gpt.name);
+            log(`  -> Inséré en BDD (created_at = ${sqliteDate})`);
+
+            if (!noDelete) {
+                try { await twilioClient.recordings(RecordingSid).remove(); log(`  -> Supprimé de Twilio`); }
+                catch (e) { log(`  -> Suppression Twilio échouée : ${e.message}`); }
+            }
+
+            ok++;
+        } catch (err) {
+            log(`  -> ERREUR : ${err.message}`);
+            failed++;
+        }
+
+        await new Promise(r => setTimeout(r, 600));
+    }
+
+    log(`\n=== Terminé : ${ok} insérés, ${skipped} ignorés, ${failed} erreurs ===`);
+    res.end();
 });
 
 // --- Handler d'erreurs Express global ---
