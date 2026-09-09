@@ -359,7 +359,7 @@ async function processVoicemail(payload) {
         logServerError("processVoicemail", err.message, err.stack);
         try {
             await sgMail.send({
-                to: "cbecker.piaf@gmail.com",
+                to: process.env.ERROR_ALERT_EMAIL,
                 from: "louis.becker@student-cs.fr",
                 subject: "🚨 PitCall — Erreur serveur",
                 html: `<p><strong>Route :</strong> processVoicemail</p><p><strong>Message :</strong> ${err.message}</p><pre style="font-size:12px;color:#666;">${err.stack}</pre>`
@@ -702,7 +702,7 @@ app.use(async (err, req, res, next) => {
     logServerError(req.path, err.message, err.stack);
     try {
         await sgMail.send({
-            to: "cbecker.piaf@gmail.com",
+            to: process.env.ERROR_ALERT_EMAIL,
             from: "louis.becker@student-cs.fr",
             subject: "🚨 PitCall — Erreur serveur",
             html: `<p><strong>Route :</strong> ${req.method} ${req.path}</p><p><strong>Message :</strong> ${err.message}</p><pre style="font-size:12px;color:#666;">${err.stack}</pre>`
