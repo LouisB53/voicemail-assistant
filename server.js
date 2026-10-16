@@ -703,7 +703,7 @@ app.use(async (err, req, res, next) => {
     try {
         await sgMail.send({
             to: process.env.ERROR_ALERT_EMAIL,
-            from: from: process.env.SENDGRID_FROM_EMAIL,
+            from: process.env.SENDGRID_FROM_EMAIL,
             subject: "🚨 PitCall — Erreur serveur",
             html: `<p><strong>Route :</strong> ${req.method} ${req.path}</p><p><strong>Message :</strong> ${err.message}</p><pre style="font-size:12px;color:#666;">${err.stack}</pre>`
         });
