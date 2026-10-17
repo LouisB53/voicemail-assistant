@@ -26,6 +26,13 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      # Vérification du code avant déploiement
+      - name: Check JavaScript syntax
+        run: |
+          node --check server.js
+          node --check db.js
+          find routes utils -type f -name "*.js" -exec node --check {} \;
+
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
         with:
